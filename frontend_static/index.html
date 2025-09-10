@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CTF File Analyzer</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>CTF File Analyzer</h1>
+            <p>Upload a file to begin analysis. The tool will scan for hidden data, flags, and other CTF-related artifacts.</p>
+        </header>
+
+        <div class="upload-section">
+            <form id="upload-form">
+                <div id="drop-zone">
+                    <p>Drag & Drop a file here or click to select</p>
+                    <input type="file" id="file-input" name="file" hidden>
+                </div>
+                <button type="submit" id="analyze-button">Analyze</button>
+            </form>
+        </div>
+
+        <div id="loading-indicator" class="hidden">
+            <div class="spinner"></div>
+            <p>Analyzing file, please wait...</p>
+        </div>
+
+        <div id="error-display" class="hidden"></div>
+
+        <div id="results-container" class="hidden">
+            <!-- General Info -->
+            <section id="general-info" class="results-section">
+                <h2>File Overview</h2>
+                <div id="overview-content" class="card"></div>
+            </section>
+
+            <!-- Key Findings -->
+            <section id="key-findings" class="results-section">
+                <h2>Key Findings</h2>
+                <div id="findings-content" class="card"></div>
+            </section>
+
+            <!-- AI Analysis -->
+            <section id="ai-analysis" class="results-section">
+                <h2>AI-Powered Analysis</h2>
+                <div id="ai-analysis-content" class="card"></div>
+            </section>
+
+            <!-- Hex Preview -->
+            <section id="hex-preview" class="results-section">
+                <h2>Hex & ASCII Preview</h2>
+                <div id="hex-content" class="card"></div>
+            </section>
+
+            <!-- Extracted Strings -->
+            <section id="extracted-strings" class="results-section">
+                <h2>Extracted Strings</h2>
+                <div id="strings-content" class="card">
+                    <input type="text" id="string-filter" placeholder="Filter strings...">
+                    <ul id="strings-list"></ul>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>

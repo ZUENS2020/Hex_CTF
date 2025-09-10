@@ -1,0 +1,7 @@
+Flask
+python-dotenv
+requests
+Pillow
+python-magic-bin
+numpy
+Flask-Cors
