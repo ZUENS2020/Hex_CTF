@@ -80,6 +80,62 @@ function renderFindings(findings) {
     });
 }
 
+function renderLsbAnalysis(lsb) {
+    const container = document.getElementById('lsb-content');
+    container.innerHTML = '';
+    if (!lsb) {
+        container.innerHTML = '<p>未在此图像中执行或检测到LSB隐写分析。</p>';
+        return;
+    }
+
+    if (lsb.error) {
+        container.innerHTML = `<p>LSB分析错误: ${escapeHTML(lsb.error)}</p>`;
+        return;
+    }
+
+    let content = '<h3>LSB层分析结果</h3>';
+    if (lsb.findings && lsb.findings.length > 0) {
+        lsb.findings.forEach(finding => {
+            content += `<div class="finding severity-${finding.severity}">`;
+            content += `<div class="finding-title">${escapeHTML(finding.type)} <span class="severity severity-${finding.severity}">${escapeHTML(finding.severity)}</span></div>`;
+            content += `<p>${escapeHTML(finding.description)}</p>`;
+            if (finding.value) {
+                content += `<p><strong>值:</strong> <code>${escapeHTML(String(finding.value))}</code></p>`;
+            }
+            content += '</div>';
+        });
+    } else {
+        content += '<p>在LSB层中未发现特定线索。</p>';
+    }
+
+    if (lsb.base64_data) {
+        content += `<hr><button id="download-lsb-btn">下载提取的数据 (二进制)</button>`;
+    }
+    container.innerHTML = content;
+
+    const downloadBtn = document.getElementById('download-lsb-btn');
+    if (downloadBtn) {
+        downloadBtn.addEventListener('click', () => {
+            const byteCharacters = atob(lsb.base64_data);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], {type: 'application/octet-stream'});
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = 'lsb_extracted_data.bin';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        });
+    }
+}
+
 function renderFileStructure(structure) {
     const container = document.getElementById('structure-content');
     container.innerHTML = '';
@@ -192,6 +248,7 @@ async function handleFormSubmit(event) {
         renderOverview(data);
         renderFindings(data.findings);
         renderFileStructure(data.file_structure);
+        renderLsbAnalysis(data.lsb_analysis);
         renderHexPreview(data.hex_ascii_preview);
         renderStrings(data.extracted_strings);
 

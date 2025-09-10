@@ -5,6 +5,7 @@ import zipfile
 import re
 import math
 import struct
+import base64
 import numpy as np
 from PIL import Image
 try:
@@ -263,8 +264,12 @@ def analyze_rar_file(file_path, findings):
 
     return None
 
-def analyze_image_steganography(image_path, findings):
-    """Extracts LSB data from an image and performs secondary analysis on it."""
+def analyze_image_steganography(image_path):
+    """
+    Extracts LSB data from an image, performs secondary analysis, and returns results.
+    Returns a dictionary with findings and the base64 encoded data stream.
+    """
+    lsb_findings = []
     try:
         with Image.open(image_path) as img:
             pixels = img.convert("RGB").load()
@@ -278,39 +283,43 @@ def analyze_image_steganography(image_path, findings):
                     binary_data += bin(g)[-1]
                     binary_data += bin(b)[-1]
 
-            # Convert binary string to bytes
             hidden_bytes = bytearray()
             for i in range(0, len(binary_data), 8):
                 byte = binary_data[i:i+8]
                 if len(byte) == 8:
                     hidden_bytes.append(int(byte, 2))
-
             hidden_bytes = bytes(hidden_bytes)
 
-            # Secondary analysis on the extracted data
             if not hidden_bytes:
-                return
+                return None
 
-            # Check for magic bytes in the hidden data
+            # Secondary analysis on the extracted data
             hidden_magic = analyze_magic_bytes(hidden_bytes)
             if hidden_magic['magic_bytes_type'] != 'Unknown':
-                add_finding(findings, type="LSB Hidden Data", severity="CRITICAL",
-                    description=f"Detected a potential hidden file in the LSB layer. Magic bytes suggest it is a '{hidden_magic['magic_bytes_type']}' file.",
-                    hint="The full LSB data stream may contain a complete file. Try extracting it manually.")
+                add_finding(lsb_findings, type="LSB Hidden File", severity="CRITICAL",
+                    description=f"Detected a potential hidden file in the LSB layer. Magic bytes suggest it is a '{hidden_magic['magic_bytes_type']}' file.")
 
-            # Check for strings in the hidden data
             hidden_strings = extract_strings(hidden_bytes)
             for s in hidden_strings:
                 if s['is_flag']:
-                    add_finding(findings, type="LSB Hidden Data", severity="CRITICAL",
+                    add_finding(lsb_findings, type="LSB Hidden Flag", severity="CRITICAL",
                         description="Found a potential flag in the LSB data.", value=s['content'])
-                elif len(s['content']) > 10: # Report any reasonably long string
-                     add_finding(findings, type="LSB Hidden Data", severity="WARNING",
+                elif len(s['content']) > 10:
+                     add_finding(lsb_findings, type="LSB Hidden String", severity="WARNING",
                         description="Found a long string in the LSB data.", value=s['content'])
 
+            if not lsb_findings:
+                 add_finding(lsb_findings, type="LSB Data Found", severity="INFO",
+                    description=f"Extracted {len(hidden_bytes)} bytes of data from the LSB layer, but no specific findings were identified. You can download the raw data for manual analysis.")
+
+            return {
+                "findings": lsb_findings,
+                "base64_data": base64.b64encode(hidden_bytes).decode('ascii')
+            }
+
     except Exception as e:
-        add_finding(findings, type="Image Analysis Error", severity="WARNING",
-            description=f"Could not perform steganography analysis on the image: {e}")
+        # This error should be reported in the main findings, not LSB findings
+        return {"error": f"Could not perform steganography analysis on the image: {e}"}
 
 
 def analyze_strings_for_urls(strings_list, findings):
@@ -378,6 +387,7 @@ def analyze_file(file_storage):
 
     findings = []
     file_structure = None
+    lsb_analysis = None
 
     # --- Basic Analysis ---
     file_size = len(data)
@@ -407,7 +417,12 @@ def analyze_file(file_storage):
         file_structure = analyze_zip_file(temp_path, findings)
     elif file_type == 'PNG':
         file_structure = analyze_png_file(data, findings)
-        analyze_image_steganography(temp_path, findings)
+        lsb_analysis = analyze_image_steganography(temp_path)
+        # If the analysis itself returned an error, add it to the main findings
+        if lsb_analysis and 'error' in lsb_analysis:
+            add_finding(findings, type="Image Analysis Error", severity="WARNING",
+                        description=lsb_analysis['error'])
+            lsb_analysis = None # Clear it so frontend doesn't try to render it
     elif file_type in ('RAR', 'RAR5'):
         file_structure = analyze_rar_file(temp_path, findings)
 
@@ -425,4 +440,5 @@ def analyze_file(file_storage):
         "extracted_strings": extracted_strings,
         "metadata": {}, # Placeholder for future metadata extraction
         "file_structure": file_structure,
+        "lsb_analysis": lsb_analysis,
     }
