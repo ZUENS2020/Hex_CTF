@@ -24,19 +24,44 @@ RECOMMENDED_TOOLS = {
     "Data Appended Past EOF": {"name": "binwalk / foremost", "description": "Tools for carving and extracting hidden files from data streams."},
     "Encrypted ZIP Member": {"name": "7-Zip / John the Ripper", "description": "7-Zip can sometimes open pseudo-encrypted files. John can be used for password cracking."},
     "PNG CRC Mismatch": {"name": "pngcheck / Hex Editor", "description": "pngcheck can diagnose PNG errors. A hex editor allows for manual inspection and repair."},
-    "Hidden ZIP Entry Found": {"name": "A hex editor or forensic tool", "description": "These tools can help manually extract or analyze unindexed file entries."},
-    "LSB Hidden Data": {"name": "Stegsolve / zsteg", "description": "Tools for manual LSB analysis and extraction."}
+    "Hidden ZIP Entry Found": {"name": "A hex editor or forensic tool", "description": "These tools can help manually extract or analyze unindexed file entries."}
 }
-MAGIC_BYTES_DB = {
-    b'\x89PNG\r\n\x1a\n': ('PNG', 'image/png'),
-    b'\xFF\xD8\xFF': ('JPEG', 'image/jpeg'),
-    b'GIF87a': ('GIF', 'image/gif'),
-    b'GIF89a': ('GIF', 'image/gif'),
-    b'%PDF-': ('PDF', 'application/pdf'),
-    b'PK\x03\x04': ('ZIP', 'application/zip'),
-    b'Rar!\x1a\x07\x00': ('RAR', 'application/x-rar-compressed'),
-    b'Rar!\x1a\x07\x01\x00': ('RAR5', 'application/x-rar-compressed'),
-}
+MAGIC_BYTES_DB = [
+    # Each entry is a tuple: (magic_bytes, offset, type_name, mime_type)
+    # Images
+    (b'\x89PNG\r\n\x1a\n', 0, 'PNG', 'image/png'),
+    (b'\xFF\xD8\xFF', 0, 'JPEG', 'image/jpeg'),
+    (b'GIF89a', 0, 'GIF', 'image/gif'),
+    (b'GIF87a', 0, 'GIF', 'image/gif'),
+    (b'II*\x00', 0, 'TIFF (Little-endian)', 'image/tiff'),
+    (b'MM\x00*', 0, 'TIFF (Big-endian)', 'image/tiff'),
+    (b'BM', 0, 'BMP', 'image/bmp'),
+    (b'8BPS', 0, 'PSD', 'image/vnd.adobe.photoshop'),
+    # Archives
+    (b'PK\x03\x04', 0, 'ZIP', 'application/zip'),
+    (b'Rar!\x1a\x07\x00', 0, 'RAR', 'application/x-rar-compressed'),
+    (b'Rar!\x1a\x07\x01\x00', 0, 'RAR5', 'application/x-rar-compressed'),
+    (b'7z\xbc\xaf\x27\x1c', 0, '7z', 'application/x-7z-compressed'),
+    (b'\x1f\x8b', 0, 'GZ', 'application/gzip'),
+    (b'BZ', 0, 'BZ2', 'application/x-bzip2'),
+    # Documents
+    (b'%PDF-', 0, 'PDF', 'application/pdf'),
+    (b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1', 0, 'DOC/XLS/PPT (OLE)', 'application/msword'),
+    (b'{\\rtf', 0, 'RTF', 'application/rtf'),
+    (b'<?xml', 0, 'XML', 'application/xml'),
+    # Executables
+    (b'MZ', 0, 'EXE/DLL (Windows)', 'application/x-msdownload'),
+    (b'\x7fELF', 0, 'ELF (Linux)', 'application/x-elf'),
+    # Audio/Video (with offsets)
+    (b'WAVE', 8, 'WAV', 'audio/x-wav'),
+    (b'AVI ', 8, 'AVI', 'video/x-msvideo'),
+    (b'MThd', 0, 'MIDI', 'audio/midi'),
+    # Other
+    (b'AC10', 0, 'DWG', 'image/vnd.dwg'),
+    (b'Delivery-date:', 0, 'EML', 'message/rfc822'),
+    (b'!BDN', 0, 'PST', 'application/vnd.ms-outlook'),
+    (b'Standard J', 0, 'MDB', 'application/x-msaccess'),
+]
 
 # --- Helper Functions ---
 
@@ -93,9 +118,16 @@ def extract_strings(data):
     return strings
 
 def analyze_magic_bytes(data):
-    for magic_seq, (file_type, mime) in MAGIC_BYTES_DB.items():
-        if data.startswith(magic_seq):
-            return {"magic_bytes_type": file_type, "mime_type": mime}
+    for magic_seq, offset, file_type, mime in MAGIC_BYTES_DB:
+        # Ensure the data is long enough for the check
+        if len(data) > offset + len(magic_seq):
+            # Read the slice of data from the specified offset
+            data_slice = data[offset : offset + len(magic_seq)]
+            if data_slice == magic_seq:
+                # For files like WAV, an additional check at the start is good practice
+                if file_type == 'WAV' and not data.startswith(b'RIFF'):
+                    continue
+                return {"magic_bytes_type": file_type, "mime_type": mime}
     return {"magic_bytes_type": "Unknown", "mime_type": "application/octet-stream"}
 
 def analyze_png_file(data, findings):
@@ -264,63 +296,6 @@ def analyze_rar_file(file_path, findings):
 
     return None
 
-def analyze_image_steganography(image_path):
-    """
-    Extracts LSB data from an image, performs secondary analysis, and returns results.
-    Returns a dictionary with findings and the base64 encoded data stream.
-    """
-    lsb_findings = []
-    try:
-        with Image.open(image_path) as img:
-            pixels = img.convert("RGB").load()
-            width, height = img.size
-
-            binary_data = ""
-            for y in range(height):
-                for x in range(width):
-                    r, g, b = pixels[x, y]
-                    binary_data += bin(r)[-1]
-                    binary_data += bin(g)[-1]
-                    binary_data += bin(b)[-1]
-
-            hidden_bytes = bytearray()
-            for i in range(0, len(binary_data), 8):
-                byte = binary_data[i:i+8]
-                if len(byte) == 8:
-                    hidden_bytes.append(int(byte, 2))
-            hidden_bytes = bytes(hidden_bytes)
-
-            if not hidden_bytes:
-                return None
-
-            # Secondary analysis on the extracted data
-            hidden_magic = analyze_magic_bytes(hidden_bytes)
-            if hidden_magic['magic_bytes_type'] != 'Unknown':
-                add_finding(lsb_findings, type="LSB Hidden File", severity="CRITICAL",
-                    description=f"Detected a potential hidden file in the LSB layer. Magic bytes suggest it is a '{hidden_magic['magic_bytes_type']}' file.")
-
-            hidden_strings = extract_strings(hidden_bytes)
-            for s in hidden_strings:
-                if s['is_flag']:
-                    add_finding(lsb_findings, type="LSB Hidden Flag", severity="CRITICAL",
-                        description="Found a potential flag in the LSB data.", value=s['content'])
-                elif len(s['content']) > 10:
-                     add_finding(lsb_findings, type="LSB Hidden String", severity="WARNING",
-                        description="Found a long string in the LSB data.", value=s['content'])
-
-            if not lsb_findings:
-                 add_finding(lsb_findings, type="LSB Data Found", severity="INFO",
-                    description=f"Extracted {len(hidden_bytes)} bytes of data from the LSB layer, but no specific findings were identified. You can download the raw data for manual analysis.")
-
-            return {
-                "findings": lsb_findings,
-                "base64_data": base64.b64encode(hidden_bytes).decode('ascii')
-            }
-
-    except Exception as e:
-        # This error should be reported in the main findings, not LSB findings
-        return {"error": f"Could not perform steganography analysis on the image: {e}"}
-
 
 def analyze_strings_for_urls(strings_list, findings):
     """Analyzes extracted strings for URLs."""
@@ -387,7 +362,6 @@ def analyze_file(file_storage):
 
     findings = []
     file_structure = None
-    lsb_analysis = None
 
     # --- Basic Analysis ---
     file_size = len(data)
@@ -417,12 +391,6 @@ def analyze_file(file_storage):
         file_structure = analyze_zip_file(temp_path, findings)
     elif file_type == 'PNG':
         file_structure = analyze_png_file(data, findings)
-        lsb_analysis = analyze_image_steganography(temp_path)
-        # If the analysis itself returned an error, add it to the main findings
-        if lsb_analysis and 'error' in lsb_analysis:
-            add_finding(findings, type="Image Analysis Error", severity="WARNING",
-                        description=lsb_analysis['error'])
-            lsb_analysis = None # Clear it so frontend doesn't try to render it
     elif file_type in ('RAR', 'RAR5'):
         file_structure = analyze_rar_file(temp_path, findings)
 
@@ -440,5 +408,4 @@ def analyze_file(file_storage):
         "extracted_strings": extracted_strings,
         "metadata": {}, # Placeholder for future metadata extraction
         "file_structure": file_structure,
-        "lsb_analysis": lsb_analysis,
     }
