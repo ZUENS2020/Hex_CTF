@@ -5,6 +5,7 @@ import zlib
 import zipfile
 import re
 import math
+import struct
 import numpy as np
 from PIL import Image
 from .ai_analyzer import analyze_text_with_ai
@@ -13,6 +14,7 @@ from .ai_analyzer import analyze_text_with_ai
 STRING_MIN_LEN = 4
 HEX_PREVIEW_BYTES = 256
 CTF_FLAG_REGEX = re.compile(r'flag\{[a-zA-Z0-9_!@#$-]+\}|ctf\{[a-zA-Z0-9_!@#$-]+\}', re.IGNORECASE)
+CTF_KEYWORD_REGEX = re.compile(r'\b(flag|ctf|key|password|secret|crypto)\b', re.IGNORECASE)
 MAGIC_BYTES_DB = {
     b'\x89PNG\r\n\x1a\n': ('PNG', 'image/png'),
     b'\xFF\xD8\xFF': ('JPEG', 'image/jpeg'),
@@ -68,6 +70,66 @@ def analyze_magic_bytes(data):
             return {"magic_bytes_type": file_type, "mime_type": mime}
     return {"magic_bytes_type": "Unknown", "mime_type": "application/octet-stream"}
 
+def analyze_png_file(data, findings):
+    """Parses PNG chunks to find dimensions and verify CRC checksums."""
+    PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
+    if not data.startswith(PNG_SIGNATURE):
+        return
+
+    offset = len(PNG_SIGNATURE)
+    while offset < len(data):
+        try:
+            # Read chunk length and type
+            length = struct.unpack('>I', data[offset:offset+4])[0]
+            chunk_type = data[offset+4:offset+8]
+            offset += 8
+
+            # Read chunk data and CRC
+            chunk_data = data[offset:offset+length]
+            stored_crc = struct.unpack('>I', data[offset+length:offset+length+4])[0]
+
+            # Verify CRC
+            # The CRC is calculated over the chunk type and chunk data
+            calculated_crc = zlib.crc32(chunk_type + chunk_data)
+
+            if calculated_crc != stored_crc:
+                findings.append({
+                    "type": "PNG CRC Mismatch", "severity": "CRITICAL",
+                    "description": f"CRC mismatch in chunk '{chunk_type.decode()}'. This indicates data corruption or tampering.",
+                    "offset": offset - 8,
+                    "value": f"Expected CRC: {stored_crc}, Calculated CRC: {calculated_crc}"
+                })
+
+            # Special handling for IHDR chunk
+            if chunk_type == b'IHDR':
+                if length == 13:
+                    width, height = struct.unpack('>II', chunk_data[:8])
+                    findings.append({
+                        "type": "PNG Image Dimensions", "severity": "INFO",
+                        "description": f"PNG IHDR chunk found. Image dimensions are {width}x{height}.",
+                        "value": f"Width: {width}, Height: {height}"
+                    })
+                else:
+                    findings.append({
+                        "type": "PNG Malformed IHDR", "severity": "WARNING",
+                        "description": "PNG IHDR chunk has an incorrect length.",
+                        "offset": offset - 8,
+                    })
+
+            # Move to the next chunk
+            offset += length + 4
+
+            if chunk_type == b'IEND':
+                break # Stop after the last chunk
+        except (struct.error, IndexError):
+            findings.append({
+                "type": "PNG Parse Error", "severity": "CRITICAL",
+                "description": "Failed to parse a PNG chunk. The file may be truncated or malformed.",
+                "offset": offset
+            })
+            break
+
+
 def analyze_zip_file(file_path, findings):
     try:
         with zipfile.ZipFile(file_path, 'r') as zf:
@@ -112,6 +174,19 @@ def analyze_zip_file(file_path, findings):
     except zipfile.BadZipFile:
         findings.append({"type": "ZIP Error", "severity": "CRITICAL", "description": "The file is not a valid ZIP archive or is corrupted."})
 
+
+def analyze_strings_for_keywords(strings_list, findings):
+    """Analyzes extracted strings for CTF-related keywords."""
+    for s in strings_list:
+        # We search the content of the string for keywords
+        for match in CTF_KEYWORD_REGEX.finditer(s['content']):
+            findings.append({
+                "type": "Potential CTF Keyword",
+                "severity": "INFO",
+                "description": f"Found keyword '{match.group(0)}' in a string.",
+                "offset": s['offset'] + match.start(),
+                "value": s['content']
+            })
 
 def analyze_eof_data(data, findings):
     eof_markers = {
@@ -166,11 +241,18 @@ def analyze_file(file_storage):
     magic_analysis = analyze_magic_bytes(data)
     try:
         libmagic_type = magic.from_buffer(data, mime=True)
-    except Exception:
+    except Exception as e:
+        # If libmagic fails, we can't make a comparison, so we default to a non-mismatching type
         libmagic_type = "N/A"
 
     _, extension = os.path.splitext(filename)
-    type_mismatch = magic_analysis['mime_type'] != libmagic_type and libmagic_type != "application/octet-stream"
+
+    # A mismatch occurs ONLY if libmagic provides a valid, different MIME type.
+    # We ignore cases where libmagic fails ("N/A") or gives a generic response.
+    type_mismatch = (
+        libmagic_type not in ("N/A", "application/octet-stream") and
+        magic_analysis.get('mime_type') != libmagic_type
+    )
 
     file_type_analysis = {
         "magic_bytes_type": magic_analysis['magic_bytes_type'],
@@ -185,9 +267,12 @@ def analyze_file(file_storage):
         })
 
     # --- Deep Analysis ---
+    analyze_strings_for_keywords(extracted_strings, findings)
     analyze_eof_data(data, findings)
     if file_type_analysis['magic_bytes_type'] == 'ZIP':
         analyze_zip_file(temp_path, findings)
+    elif file_type_analysis['magic_bytes_type'] == 'PNG':
+        analyze_png_file(data, findings)
 
     # --- AI Analysis ---
     ai_input_text = f"Filename: {filename}\nFile Size: {file_size} bytes\n\n--- Notable Strings ---\n"
