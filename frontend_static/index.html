@@ -14,7 +14,6 @@
         <header>
             <h1>CTF 文件分析器</h1>
             <p>上传文件开始分析。本工具将扫描隐藏数据、Flag以及其他CTF相关线索。</p>
-            <button id="settings-btn">⚙️ 设置</button>
         </header>
 
         <div class="upload-section">
@@ -40,7 +39,6 @@
                 <button class="tab-link" data-tab="tab-findings">主要发现</button>
                 <button class="tab-link" data-tab="tab-strings">提取字符串</button>
                 <button class="tab-link" data-tab="tab-hex">十六进制预览</button>
-                <button class="tab-link" data-tab="tab-ai">AI 增强分析</button>
             </div>
 
             <div id="tab-overview" class="tab-pane active">
@@ -57,26 +55,6 @@
             </div>
             <div id="tab-hex" class="tab-pane">
                 <div id="hex-content" class="card"></div>
-            </div>
-            <div id="tab-ai" class="tab-pane">
-                <div id="ai-analysis-content" class="card"></div>
-            </div>
-        </div>
-
-        <!-- AI Settings Modal -->
-        <div id="settings-modal" class="modal hidden">
-            <div class="modal-content">
-                <span class="close-btn">&times;</span>
-                <h2>AI 分析设置</h2>
-                <form id="ai-settings-form">
-                    <label for="ai-url">API URL:</label>
-                    <input type="text" id="ai-url" name="ai_url" placeholder="例如: https://api.siliconflow.cn/v1">
-                    <label for="ai-key">API Key:</label>
-                    <input type="password" id="ai-key" name="ai_key" placeholder="您的 SiliconFlow API 密钥">
-                    <label for="ai-model">模型名称:</label>
-                    <input type="text" id="ai-model" name="ai_model" placeholder="例如: Qwen/Qwen2-7B-Instruct">
-                    <button type="submit">保存设置</button>
-                </form>
             </div>
         </div>
     </div>

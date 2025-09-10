@@ -8,7 +8,6 @@ import math
 import struct
 import numpy as np
 from PIL import Image
-from .ai_analyzer import analyze_text_with_ai
 
 # --- Configuration ---
 STRING_MIN_LEN = 4
@@ -16,6 +15,12 @@ HEX_PREVIEW_BYTES = 256
 CTF_FLAG_REGEX = re.compile(r'flag\{[a-zA-Z0-9_!@#$-]+\}|ctf\{[a-zA-Z0-9_!@#$-]+\}', re.IGNORECASE)
 CTF_KEYWORD_REGEX = re.compile(r'\b(flag|ctf|key|password|secret|crypto)\b', re.IGNORECASE)
 URL_REGEX = re.compile(r'https?://[^\s/$.?#].[^\s]*|www\.[^\s/$.?#].[^\s]*', re.IGNORECASE)
+RECOMMENDED_TOOLS = {
+    "Potential Known-Plaintext Attack": {"name": "bkcrack", "description": "A tool for breaking ZipCrypto encryption."},
+    "Data Appended Past EOF": {"name": "binwalk / foremost", "description": "Tools for carving and extracting hidden files from data streams."},
+    "Encrypted ZIP Member": {"name": "7-Zip / John the Ripper", "description": "7-Zip can sometimes open pseudo-encrypted files. John can be used for password cracking."},
+    "PNG CRC Mismatch": {"name": "pngcheck / Hex Editor", "description": "pngcheck can diagnose PNG errors. A hex editor allows for manual inspection and repair."}
+}
 MAGIC_BYTES_DB = {
     b'\x89PNG\r\n\x1a\n': ('PNG', 'image/png'),
     b'\xFF\xD8\xFF': ('JPEG', 'image/jpeg'),
@@ -26,6 +31,20 @@ MAGIC_BYTES_DB = {
 }
 
 # --- Helper Functions ---
+
+def add_finding(findings, type, severity, description, **kwargs):
+    """A helper to create and add a finding, with automatic tool recommendation."""
+    finding = {
+        "type": type,
+        "severity": severity,
+        "description": description,
+    }
+    finding.update(kwargs)
+
+    if type in RECOMMENDED_TOOLS:
+        finding["recommended_tool"] = RECOMMENDED_TOOLS[type]
+
+    findings.append(finding)
 
 def calculate_hashes(data):
     return {
@@ -94,28 +113,28 @@ def analyze_png_file(data, findings):
             calculated_crc = zlib.crc32(chunk_type + chunk_data)
 
             if calculated_crc != stored_crc:
-                findings.append({
-                    "type": "PNG CRC Mismatch", "severity": "CRITICAL",
-                    "description": f"CRC mismatch in chunk '{chunk_type.decode()}'. This indicates data corruption or tampering.",
-                    "offset": offset - 8,
-                    "value": f"Expected CRC: {stored_crc}, Calculated CRC: {calculated_crc}"
-                })
+                add_finding(findings,
+                    type="PNG CRC Mismatch", severity="CRITICAL",
+                    description=f"CRC mismatch in chunk '{chunk_type.decode()}'. This indicates data corruption or tampering.",
+                    offset=offset - 8,
+                    value=f"Expected CRC: {stored_crc}, Calculated CRC: {calculated_crc}"
+                )
 
             # Special handling for IHDR chunk
             if chunk_type == b'IHDR':
                 if length == 13:
                     width, height = struct.unpack('>II', chunk_data[:8])
-                    findings.append({
-                        "type": "PNG Image Dimensions", "severity": "INFO",
-                        "description": f"PNG IHDR chunk found. Image dimensions are {width}x{height}.",
-                        "value": f"Width: {width}, Height: {height}"
-                    })
+                    add_finding(findings,
+                        type="PNG Image Dimensions", severity="INFO",
+                        description=f"PNG IHDR chunk found. Image dimensions are {width}x{height}.",
+                        value=f"Width: {width}, Height: {height}"
+                    )
                 else:
-                    findings.append({
-                        "type": "PNG Malformed IHDR", "severity": "WARNING",
-                        "description": "PNG IHDR chunk has an incorrect length.",
-                        "offset": offset - 8,
-                    })
+                    add_finding(findings,
+                        type="PNG Malformed IHDR", severity="WARNING",
+                        description="PNG IHDR chunk has an incorrect length.",
+                        offset=offset - 8
+                    )
 
             # Move to the next chunk
             offset += length + 4
@@ -123,11 +142,11 @@ def analyze_png_file(data, findings):
             if chunk_type == b'IEND':
                 break # Stop after the last chunk
         except (struct.error, IndexError):
-            findings.append({
-                "type": "PNG Parse Error", "severity": "CRITICAL",
-                "description": "Failed to parse a PNG chunk. The file may be truncated or malformed.",
-                "offset": offset
-            })
+            add_finding(findings,
+                type="PNG Parse Error", severity="CRITICAL",
+                description="Failed to parse a PNG chunk. The file may be truncated or malformed.",
+                offset=offset
+            )
             break
 
 
@@ -136,30 +155,28 @@ def analyze_zip_file(file_path, findings):
     try:
         with zipfile.ZipFile(file_path, 'r') as zf:
             if zf.comment:
-                findings.append({
-                    "type": "ZIP Comment", "severity": "INFO",
-                    "description": "The ZIP archive contains a global comment.",
-                    "value": zf.comment.decode('utf-8', 'ignore')
-                })
+                add_finding(findings,
+                    type="ZIP Comment", severity="INFO",
+                    description="The ZIP archive contains a global comment.",
+                    value=zf.comment.decode('utf-8', 'ignore')
+                )
 
             for info in zf.infolist():
                 is_encrypted = (info.flag_bits & 0x1) != 0
 
                 # 1. Improved Pseudo-encryption & Plaintext Attack Detection
                 if is_encrypted:
-                    # General pseudo-encryption check
-                    findings.append({
-                        "type": "Encrypted ZIP Member", "severity": "WARNING",
-                        "description": f"File '{info.filename}' is marked as encrypted.",
-                        "hint": "If this file is truly encrypted, you may need a password. If it's pseudo-encrypted, some tools can ignore this flag."
-                    })
-                    # Plaintext attack vulnerability check
+                    add_finding(findings,
+                        type="Encrypted ZIP Member", severity="WARNING",
+                        description=f"File '{info.filename}' is marked as encrypted.",
+                        hint="If this file is truly encrypted, you may need a password. If it's pseudo-encrypted, some tools can ignore this flag."
+                    )
                     if info.compress_type == zipfile.ZIP_DEFLATED:
-                        findings.append({
-                            "type": "Potential Known-Plaintext Attack", "severity": "WARNING",
-                            "description": f"File '{info.filename}' uses traditional ZipCrypto encryption. This is vulnerable to known-plaintext attacks.",
-                            "hint": "If you have an unencrypted version of this file (or at least 12 bytes of it), use a tool like bkcrack to recover the encryption keys."
-                        })
+                        add_finding(findings,
+                            type="Potential Known-Plaintext Attack", severity="WARNING",
+                            description=f"File '{info.filename}' uses traditional ZipCrypto encryption. This is vulnerable to known-plaintext attacks.",
+                            hint="If you have an unencrypted version of this file (or at least 12 bytes of it), use a tool like bkcrack to recover the encryption keys."
+                        )
 
                 # 2. Inner-file type mismatch and CRC check
                 try:
@@ -170,7 +187,6 @@ def analyze_zip_file(file_path, findings):
                         _, inner_ext = os.path.splitext(info.filename)
                         inner_magic = analyze_magic_bytes(member_data)
                         if inner_magic['magic_bytes_type'] != 'Unknown' and inner_ext:
-                            # Map file extension to expected magic type for comparison
                             expected_type_for_ext = 'Unknown'
                             for magic, (ftype, mime) in MAGIC_BYTES_DB.items():
                                 if f".{ftype.lower()}" == inner_ext.lower():
@@ -178,50 +194,54 @@ def analyze_zip_file(file_path, findings):
                                     break
 
                             if inner_magic['magic_bytes_type'] != expected_type_for_ext:
-                                findings.append({
-                                    "type": "ZIP Inner File Type Mismatch", "severity": "WARNING",
-                                    "description": f"File '{info.filename}' inside the ZIP has an extension '{inner_ext}' but its content appears to be '{inner_magic['magic_bytes_type']}'.",
-                                })
+                                add_finding(findings,
+                                    type="ZIP Inner File Type Mismatch", severity="WARNING",
+                                    description=f"File '{info.filename}' inside the ZIP has an extension '{inner_ext}' but its content appears to be '{inner_magic['magic_bytes_type']}'."
+                                )
 
                         # CRC check
                         if not is_encrypted:
                             calculated_crc = zlib.crc32(member_data)
                             if calculated_crc != info.CRC:
-                                 findings.append({
-                                    "type": "ZIP CRC Mismatch", "severity": "CRITICAL",
-                                    "description": f"CRC32 mismatch for file '{info.filename}'. Expected {info.CRC}, got {calculated_crc}. The file may be corrupt or tampered with."
-                                })
+                                 add_finding(findings,
+                                    type="ZIP CRC Mismatch", severity="CRITICAL",
+                                    description=f"CRC32 mismatch for file '{info.filename}'. Expected {info.CRC}, got {calculated_crc}. The file may be corrupt or tampered with."
+                                )
                 except Exception as e:
-                    findings.append({"type": "ZIP Member Read Error", "severity":"WARNING", "description": f"Could not process member {info.filename}: {e}"})
+                    add_finding(findings,
+                        type="ZIP Member Read Error", severity="WARNING",
+                        description=f"Could not process member {info.filename}: {e}"
+                    )
 
     except zipfile.BadZipFile:
-        findings.append({"type": "ZIP Error", "severity": "CRITICAL", "description": "The file is not a valid ZIP archive or is corrupted."})
+        add_finding(findings,
+            type="ZIP Error", severity="CRITICAL",
+            description="The file is not a valid ZIP archive or is corrupted."
+        )
 
 
 def analyze_strings_for_urls(strings_list, findings):
     """Analyzes extracted strings for URLs."""
     for s in strings_list:
         for match in URL_REGEX.finditer(s['content']):
-            findings.append({
-                "type": "URL Found",
-                "severity": "INFO",
-                "description": f"Found a URL in the file.",
-                "offset": s['offset'] + match.start(),
-                "value": match.group(0)
-            })
+            add_finding(findings,
+                type="URL Found", severity="INFO",
+                description="Found a URL in the file.",
+                offset=s['offset'] + match.start(),
+                value=match.group(0)
+            )
 
 def analyze_strings_for_keywords(strings_list, findings):
     """Analyzes extracted strings for CTF-related keywords."""
     for s in strings_list:
         # We search the content of the string for keywords
         for match in CTF_KEYWORD_REGEX.finditer(s['content']):
-            findings.append({
-                "type": "Potential CTF Keyword",
-                "severity": "INFO",
-                "description": f"Found keyword '{match.group(0)}' in a string.",
-                "offset": s['offset'] + match.start(),
-                "value": s['content']
-            })
+            add_finding(findings,
+                type="Potential CTF Keyword", severity="INFO",
+                description=f"Found keyword '{match.group(0)}' in a string.",
+                offset=s['offset'] + match.start(),
+                value=s['content']
+            )
 
 def analyze_eof_data(data, findings):
     eof_markers = {
@@ -238,17 +258,17 @@ def analyze_eof_data(data, findings):
             extra_data_pos = eof_pos + len(marker)
             if extra_data_pos < len(data):
                 extra_data = data[extra_data_pos:]
-                findings.append({
-                    "type": "Data Appended Past EOF", "severity": "WARNING",
-                    "description": f"Found {len(extra_data)} byte(s) of extra data after the standard {file_type} End-Of-File marker.",
-                    "offset": extra_data_pos,
-                    "value": extra_data.hex()
-                })
+                add_finding(findings,
+                    type="Data Appended Past EOF", severity="WARNING",
+                    description=f"Found {len(extra_data)} byte(s) of extra data after the standard {file_type} End-Of-File marker.",
+                    offset=extra_data_pos,
+                    value=extra_data.hex()
+                )
 
 
 # --- Main Orchestrator ---
 
-def analyze_file(file_storage, ai_config):
+def analyze_file(file_storage):
     """
     Main function to analyze a file from a Flask FileStorage object.
     """
@@ -296,10 +316,10 @@ def analyze_file(file_storage, ai_config):
         "type_mismatch": type_mismatch
     }
     if type_mismatch:
-        findings.append({
-            "type": "File Type Mismatch", "severity": "WARNING",
-            "description": f"File extension '{extension}' does not match the detected content type '{libmagic_type}'. The file may be disguised."
-        })
+        add_finding(findings,
+            type="File Type Mismatch", severity="WARNING",
+            description=f"File extension '{extension}' does not match the detected content type '{libmagic_type}'. The file may be disguised."
+        )
 
     # --- Deep Analysis ---
     analyze_strings_for_keywords(extracted_strings, findings)
@@ -309,23 +329,6 @@ def analyze_file(file_storage, ai_config):
         analyze_zip_file(temp_path, findings)
     elif file_type_analysis['magic_bytes_type'] == 'PNG':
         analyze_png_file(data, findings)
-
-    # --- AI Analysis ---
-    ai_input_text = f"Filename: {filename}\nFile Size: {file_size} bytes\n\n--- Notable Strings ---\n"
-    flag_strings = [s['content'] for s in extracted_strings if s['is_flag']]
-    if flag_strings:
-        ai_input_text += "Found potential flags:\n" + "\n".join(flag_strings) + "\n\n"
-
-    long_strings = [s['content'] for s in extracted_strings if len(s['content']) > 20 and not s['is_flag']]
-    if long_strings:
-        ai_input_text += "Found long strings:\n" + "\n".join(long_strings[:5]) # Limit to 5 long strings
-
-    ai_results = analyze_text_with_ai(
-        ai_input_text,
-        api_url=ai_config.get('url'),
-        api_key=ai_config.get('key'),
-        model=ai_config.get('model')
-    )
 
     # Clean up temporary file
     os.remove(temp_path)
@@ -340,5 +343,4 @@ def analyze_file(file_storage, ai_config):
         "findings": findings,
         "extracted_strings": extracted_strings,
         "metadata": {}, # Placeholder for future metadata extraction
-        "ai_analysis_results": ai_results,
     }

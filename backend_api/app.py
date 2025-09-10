@@ -1,15 +1,12 @@
 import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 
 # Import the main analysis function
 from analyzer.main_analyzer import analyze_file
 
 # --- App Initialization ---
-load_dotenv() # Load environment variables from .env file
-
 app = Flask(__name__)
 CORS(app) # Enable Cross-Origin Resource Sharing for the frontend
 
@@ -34,7 +31,7 @@ def index():
 def ctf_analyze_route():
     """
     The main endpoint for file analysis.
-    Accepts a multipart/form-data request with a 'file' field and optional AI config.
+    Accepts a multipart/form-data request with a 'file' field.
     """
     if 'file' not in request.files:
         return jsonify({"error": "No file part in the request"}), 400
@@ -45,16 +42,8 @@ def ctf_analyze_route():
         return jsonify({"error": "No selected file"}), 400
 
     if file:
-        # --- AI Configuration Handling ---
-        # Prioritize values from the form, fall back to environment variables
-        ai_config = {
-            'url': request.form.get('ai_url') or os.getenv("AI_API_URL"),
-            'key': request.form.get('ai_key') or os.getenv("AI_API_KEY"),
-            'model': request.form.get('ai_model') or os.getenv("AI_MODEL"),
-        }
-
         try:
-            analysis_results = analyze_file(file, ai_config)
+            analysis_results = analyze_file(file)
             return jsonify(analysis_results)
         except Exception as e:
             # Catch-all for any unexpected errors during analysis

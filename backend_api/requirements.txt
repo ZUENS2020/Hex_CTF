@@ -1,7 +1,5 @@
 Flask
-python-dotenv
-requests
-Pillow
+Flask-Cors
 python-magic-bin
 numpy
-Flask-Cors
+Pillow

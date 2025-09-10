@@ -9,10 +9,6 @@ const loadingIndicator = document.getElementById('loading-indicator');
 const errorDisplay = document.getElementById('error-display');
 const resultsContainer = document.getElementById('results-container');
 const stringFilter = document.getElementById('string-filter');
-const settingsBtn = document.getElementById('settings-btn');
-const settingsModal = document.getElementById('settings-modal');
-const closeModalBtn = document.querySelector('.close-btn');
-const aiSettingsForm = document.getElementById('ai-settings-form');
 
 // --- Utility Functions ---
 function escapeHTML(str) {
@@ -75,24 +71,13 @@ function renderFindings(findings) {
         if (finding.hint) {
             findingHTML += `<p><strong>提示:</strong> <em>${escapeHTML(finding.hint)}</em></p>`;
         }
+        if (finding.recommended_tool) {
+            const tool = finding.recommended_tool;
+            findingHTML += `<p class="tool-recommendation"><strong>🔧 推荐工具:</strong> <code>${escapeHTML(tool.name)}</code> &mdash; <em>${escapeHTML(tool.description)}</em></p>`;
+        }
         el.innerHTML = findingHTML;
         container.appendChild(el);
     });
-}
-
-function renderAIAnalysis(ai) {
-    const container = document.getElementById('ai-analysis-content');
-    if (!ai || ai.error) {
-        container.innerHTML = `<p><strong>AI分析状态:</strong> ${ai ? escapeHTML(ai.error) : '未执行。'}</p>`;
-        return;
-    }
-    let content = `<p><strong>模型:</strong> ${escapeHTML(ai.model)}</p>`;
-    content += '<strong>响应:</strong>';
-    const responseBlock = document.createElement('blockquote');
-    responseBlock.textContent = ai.response_received;
-    addCopyButton(responseBlock, ai.response_received)
-    container.innerHTML = content;
-    container.appendChild(responseBlock);
 }
 
 function renderHexPreview(preview) {
@@ -151,15 +136,6 @@ async function handleFormSubmit(event) {
     const formData = new FormData();
     formData.append('file', file);
 
-    // Append AI settings from localStorage to the form data
-    const savedConfig = localStorage.getItem('aiConfig');
-    if (savedConfig) {
-        const aiConfig = JSON.parse(savedConfig);
-        formData.append('ai_url', aiConfig.url || '');
-        formData.append('ai_key', aiConfig.key || '');
-        formData.append('ai_model', aiConfig.model || '');
-    }
-
     try {
         const response = await fetch(`${API_BASE_URL}/ctf_analyze`, {
             method: 'POST',
@@ -176,7 +152,6 @@ async function handleFormSubmit(event) {
         // Render all results
         renderOverview(data);
         renderFindings(data.findings);
-        renderAIAnalysis(data.ai_analysis_results);
         renderHexPreview(data.hex_ascii_preview);
         renderStrings(data.extracted_strings);
 
@@ -229,43 +204,6 @@ dropZone.addEventListener('drop', (e) => {
     }
 });
 stringFilter.addEventListener('keyup', handleFileFilter);
-
-// --- Settings Modal Logic ---
-function saveAiSettings() {
-    const aiConfig = {
-        url: document.getElementById('ai-url').value,
-        key: document.getElementById('ai-key').value,
-        model: document.getElementById('ai-model').value,
-    };
-    localStorage.setItem('aiConfig', JSON.stringify(aiConfig));
-    alert('AI 设置已保存！');
-    settingsModal.classList.add('hidden');
-}
-
-function loadAiSettings() {
-    const savedConfig = localStorage.getItem('aiConfig');
-    if (savedConfig) {
-        const aiConfig = JSON.parse(savedConfig);
-        document.getElementById('ai-url').value = aiConfig.url || '';
-        document.getElementById('ai-key').value = aiConfig.key || '';
-        document.getElementById('ai-model').value = aiConfig.model || '';
-    }
-}
-
-settingsBtn.addEventListener('click', () => settingsModal.classList.remove('hidden'));
-closeModalBtn.addEventListener('click', () => settingsModal.classList.add('hidden'));
-aiSettingsForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    saveAiSettings();
-});
-window.addEventListener('click', (e) => {
-    if (e.target === settingsModal) {
-        settingsModal.classList.add('hidden');
-    }
-});
-
-// Load settings on page load
-document.addEventListener('DOMContentLoaded', loadAiSettings);
 
 // --- Tab Switching Logic ---
 const tabNav = document.querySelector('.tab-nav');

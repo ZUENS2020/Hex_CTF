@@ -2,7 +2,7 @@
 
 本项目是一个为 CTF (Capture The Flag) 竞赛设计的、功能完善的在线文件分析工具。它由一个用于深度文件分析的 Python Flask 后端和一个用于用户交互的轻量级 Vanilla JavaScript 前端组成。该工具旨在帮助参赛者快速识别文件异常、隐藏信息、伪加密、隐写术以及其他常见的CTF线索。
 
-本项目经过精心设计，可轻松部署在 **Windows** 和 **CentOS/Linux** 环境中，并具备与主流 AI API（如 OpenAI、Gemini 或通过 Ollama 部署的本地模型）集成的能力，以实现增强分析。
+本项目经过精心设计，可轻松部署在 **Windows** 和 **CentOS/Linux** 环境中。
 
 ## 项目结构
 
@@ -10,11 +10,9 @@
 .
 ├── backend_api/
 │   ├── analyzer/
-│   │   ├── ai_analyzer.py
 │   │   └── main_analyzer.py
 │   ├── app.py
-│   ├── requirements.txt
-│   └── .env.example
+│   └── requirements.txt
 ├── frontend_static/
 │   ├── index.html
 │   ├── script.js
@@ -22,15 +20,17 @@
 └── README.md
 ```
 
-##核心功能
+## 核心功能
 
 - **文件上传与十六进制/ASCII预览**: 上传任意文件，并以十六进制编辑器格式查看其头部和尾部数据。
-- **文件类型分析**: 使用 Magic Bytes 和 `libmagic` 检测文件类型，并高亮显示与文件扩展名的不匹配之处。
-- **字符串提取**: 提取所有可打印字符串，并使用正则表达式高亮潜在的 `flag{...}` 格式。
-- **熵分析**: 计算香农熵，以识别加壳或加密的数据区域。
-- **ZIP 分析**: 检测 ZIP 压缩包中的伪加密、CRC 错误和全局注释。
-- **EOF 数据检测**: 查找附加在标准文件结束标记（如 JPG、PNG）之后的数据。
-- **AI 增强分析**: 集成主流 AI API，对提取的文本进行深度分析，以获取更深层次的见解和潜在线索。
+- **文件类型分析**: 检测文件类型，并高亮显示与文件扩展名的不匹配之处。
+- **字符串与URL提取**: 提取所有可打印字符串、URL和常见CTF关键字。
+- **熵分析**: 计算香non熵，以识别加壳或加密的数据区域。
+- **深度分析**:
+    - **ZIP 分析**: 检测伪加密、CRC错误、已知明文攻击漏洞，并检查内部文件的真实类型。
+    - **PNG 分析**: 校验每个数据块的CRC，并提取图像的真实尺寸。
+    - **EOF 数据检测**: 查找附加在标准文件结束标记之后的数据。
+- **推荐工具 (新)**: 根据分析发现，自动推荐相关的第三方CTF工具（例如 `binwalk`, `bkcrack` 等），为解决问题提供明确指引。
 
 ---
 
@@ -81,28 +81,7 @@ python3 -m venv venv
 pip install -r requirements.txt
 ```
 
-### 第4步：配置 AI 分析 (可选，但推荐)
-
-要使用 AI 增强分析功能，您需要提供 API 凭据。
-
-1.  **复制示例文件：** 在 `backend_api` 目录中，将 `.env.example` 复制为名为 `.env` 的新文件。
-    - **Windows:** `copy .env.example .env`
-    - **CentOS/Linux:** `cp .env.example .env`
-
-2.  **编辑 `.env` 文件** 并填入您的详细信息：
-    ```ini
-    # 例如 OpenAI
-    AI_API_URL="https://api.openai.com/v1/chat/completions"
-    AI_API_KEY="your_openai_api_key_here"
-    AI_MODEL="gpt-4"
-
-    # 例如本地运行的 Ollama
-    # AI_API_URL="http://localhost:11434/api/chat"
-    # AI_API_KEY="ollama" # 可以是任意非空字符串
-    # AI_MODEL="llama3"
-    ```
-
-### 第5步：运行后端服务器
+### 第4步：运行后端服务器
 
 请确保您位于 `backend_api` 目录中，并已激活虚拟环境。
 
