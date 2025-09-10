@@ -253,3 +253,23 @@ h2 {
     border-left: 3px solid var(--accent-color);
     font-size: 0.9em;
 }
+
+/* Structure Table */
+.structure-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9em;
+}
+.structure-table th, .structure-table td {
+    border: 1px solid var(--border-color);
+    padding: 8px 12px;
+    text-align: left;
+    font-family: var(--font-mono);
+}
+.structure-table th {
+    background-color: var(--bg-color);
+    color: var(--accent-color);
+}
+.structure-table tr:nth-child(even) {
+    background-color: rgba(255,255,255,0.02);
+}

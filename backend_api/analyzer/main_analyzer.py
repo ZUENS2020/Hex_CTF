@@ -94,68 +94,55 @@ def analyze_magic_bytes(data):
     return {"magic_bytes_type": "Unknown", "mime_type": "application/octet-stream"}
 
 def analyze_png_file(data, findings):
-    """Parses PNG chunks to find dimensions and verify CRC checksums."""
+    """Parses PNG chunks to find dimensions, verify CRC, and return structure."""
     PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
     if not data.startswith(PNG_SIGNATURE):
-        return
+        return None
 
+    structure = []
     offset = len(PNG_SIGNATURE)
     while offset < len(data):
         try:
-            # Read chunk length and type
             length = struct.unpack('>I', data[offset:offset+4])[0]
-            chunk_type = data[offset+4:offset+8]
+            chunk_type_bytes = data[offset+4:offset+8]
+            chunk_type_str = chunk_type_bytes.decode('ascii', 'ignore')
+            structure.append({"type": "chunk", "name": chunk_type_str, "size": length, "offset": offset})
             offset += 8
 
-            # Read chunk data and CRC
             chunk_data = data[offset:offset+length]
             stored_crc = struct.unpack('>I', data[offset+length:offset+length+4])[0]
-
-            # Verify CRC
-            # The CRC is calculated over the chunk type and chunk data
-            calculated_crc = zlib.crc32(chunk_type + chunk_data)
+            calculated_crc = zlib.crc32(chunk_type_bytes + chunk_data)
 
             if calculated_crc != stored_crc:
-                add_finding(findings,
-                    type="PNG CRC Mismatch", severity="CRITICAL",
-                    description=f"CRC mismatch in chunk '{chunk_type.decode()}'. This indicates data corruption or tampering.",
-                    offset=offset - 8,
-                    value=f"Expected CRC: {stored_crc}, Calculated CRC: {calculated_crc}"
-                )
+                add_finding(findings, type="PNG CRC Mismatch", severity="CRITICAL",
+                    description=f"CRC mismatch in chunk '{chunk_type_str}'. This indicates data corruption or tampering.",
+                    offset=offset - 8, value=f"Expected CRC: {stored_crc}, Calculated CRC: {calculated_crc}")
 
-            # Special handling for IHDR chunk
-            if chunk_type == b'IHDR':
+            if chunk_type_bytes == b'IHDR':
                 if length == 13:
                     width, height = struct.unpack('>II', chunk_data[:8])
-                    add_finding(findings,
-                        type="PNG Image Dimensions", severity="INFO",
+                    add_finding(findings, type="PNG Image Dimensions", severity="INFO",
                         description=f"PNG IHDR chunk found. Image dimensions are {width}x{height}.",
-                        value=f"Width: {width}, Height: {height}"
-                    )
+                        value=f"Width: {width}, Height: {height}")
                 else:
-                    add_finding(findings,
-                        type="PNG Malformed IHDR", severity="WARNING",
-                        description="PNG IHDR chunk has an incorrect length.",
-                        offset=offset - 8
-                    )
+                    add_finding(findings, type="PNG Malformed IHDR", severity="WARNING",
+                        description="PNG IHDR chunk has an incorrect length.", offset=offset - 8)
 
-            # Move to the next chunk
             offset += length + 4
-
-            if chunk_type == b'IEND':
-                break # Stop after the last chunk
+            if chunk_type_bytes == b'IEND':
+                break
         except (struct.error, IndexError):
-            add_finding(findings,
-                type="PNG Parse Error", severity="CRITICAL",
+            add_finding(findings, type="PNG Parse Error", severity="CRITICAL",
                 description="Failed to parse a PNG chunk. The file may be truncated or malformed.",
-                offset=offset
-            )
+                offset=offset)
             break
+    return structure
 
 
 def analyze_zip_file(file_path, findings):
     """Performs deep analysis on ZIP files, including raw scans for hidden entries."""
     LOCAL_HEADER_SIG = b'PK\x03\x04'
+    structure = []
 
     # --- Standard Analysis using zipfile library ---
     official_filenames = set()
@@ -163,13 +150,19 @@ def analyze_zip_file(file_path, findings):
         with zipfile.ZipFile(file_path, 'r') as zf:
             official_filenames = {info.filename for info in zf.infolist()}
             if zf.comment:
-                add_finding(findings,
-                    type="ZIP Comment", severity="INFO",
+                add_finding(findings, type="ZIP Comment", severity="INFO",
                     description="The ZIP archive contains a global comment.",
-                    value=zf.comment.decode('utf-8', 'ignore')
-                )
+                    value=zf.comment.decode('utf-8', 'ignore'))
 
             for info in zf.infolist():
+                # Populate structure
+                structure.append({
+                    "type": "zip_entry", "name": info.filename,
+                    "compressed_size": info.compress_size, "uncompressed_size": info.file_size,
+                    "timestamp": info.date_time, "crc": info.CRC,
+                    "is_encrypted": (info.flag_bits & 0x1) != 0
+                })
+
                 is_encrypted = (info.flag_bits & 0x1) != 0
                 if is_encrypted:
                     add_finding(findings, type="Encrypted ZIP Member", severity="WARNING",
@@ -233,6 +226,8 @@ def analyze_zip_file(file_path, findings):
                 description=f"A file entry for '{hidden_file}' was found via raw scan but is not listed in the ZIP's central directory.",
                 hint="This file is hidden from standard unzipping tools. Use a forensic tool to extract it."
             )
+
+    return structure
 
 
 def analyze_strings_for_urls(strings_list, findings):
@@ -299,6 +294,7 @@ def analyze_file(file_storage):
     file_storage.save(temp_path)
 
     findings = []
+    file_structure = None
 
     # --- Basic Analysis ---
     file_size = len(data)
@@ -343,9 +339,9 @@ def analyze_file(file_storage):
 
     file_type = file_type_analysis['magic_bytes_type']
     if file_type == 'ZIP':
-        analyze_zip_file(temp_path, findings)
+        file_structure = analyze_zip_file(temp_path, findings)
     elif file_type == 'PNG':
-        analyze_png_file(data, findings)
+        file_structure = analyze_png_file(data, findings)
     elif file_type in ('RAR', 'RAR5'):
         add_finding(findings,
             type="RAR Archive Detected", severity="INFO",
@@ -366,4 +362,5 @@ def analyze_file(file_storage):
         "findings": findings,
         "extracted_strings": extracted_strings,
         "metadata": {}, # Placeholder for future metadata extraction
+        "file_structure": file_structure,
     }

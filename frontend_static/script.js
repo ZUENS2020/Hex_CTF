@@ -80,6 +80,45 @@ function renderFindings(findings) {
     });
 }
 
+function renderFileStructure(structure) {
+    const container = document.getElementById('structure-content');
+    container.innerHTML = '';
+    if (!structure || structure.length === 0) {
+        container.innerHTML = '<p>此文件类型没有可展示的内部结构，或文件为空。</p>';
+        return;
+    }
+
+    const table = document.createElement('table');
+    table.className = 'structure-table';
+    const thead = document.createElement('thead');
+    const tbody = document.createElement('tbody');
+
+    // Dynamically create headers based on the type of the first item
+    const headers = Object.keys(structure[0]);
+    const trHead = document.createElement('tr');
+    headers.forEach(header => {
+        const th = document.createElement('th');
+        th.textContent = escapeHTML(header);
+        trHead.appendChild(th);
+    });
+    thead.appendChild(trHead);
+
+    // Create rows
+    structure.forEach(item => {
+        const tr = document.createElement('tr');
+        headers.forEach(header => {
+            const td = document.createElement('td');
+            td.textContent = escapeHTML(item[header]);
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+
+    table.appendChild(thead);
+    table.appendChild(tbody);
+    container.appendChild(table);
+}
+
 function renderHexPreview(preview) {
     const container = document.getElementById('hex-content');
     let content = '<h4>文件头</h4><div class="hex-grid">';
@@ -152,6 +191,7 @@ async function handleFormSubmit(event) {
         // Render all results
         renderOverview(data);
         renderFindings(data.findings);
+        renderFileStructure(data.file_structure);
         renderHexPreview(data.hex_ascii_preview);
         renderStrings(data.extracted_strings);
 
