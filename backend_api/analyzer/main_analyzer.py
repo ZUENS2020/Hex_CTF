@@ -15,6 +15,7 @@ STRING_MIN_LEN = 4
 HEX_PREVIEW_BYTES = 256
 CTF_FLAG_REGEX = re.compile(r'flag\{[a-zA-Z0-9_!@#$-]+\}|ctf\{[a-zA-Z0-9_!@#$-]+\}', re.IGNORECASE)
 CTF_KEYWORD_REGEX = re.compile(r'\b(flag|ctf|key|password|secret|crypto)\b', re.IGNORECASE)
+URL_REGEX = re.compile(r'https?://[^\s/$.?#].[^\s]*|www\.[^\s/$.?#].[^\s]*', re.IGNORECASE)
 MAGIC_BYTES_DB = {
     b'\x89PNG\r\n\x1a\n': ('PNG', 'image/png'),
     b'\xFF\xD8\xFF': ('JPEG', 'image/jpeg'),
@@ -131,6 +132,7 @@ def analyze_png_file(data, findings):
 
 
 def analyze_zip_file(file_path, findings):
+    """Performs deep analysis on ZIP files."""
     try:
         with zipfile.ZipFile(file_path, 'r') as zf:
             if zf.comment:
@@ -141,39 +143,72 @@ def analyze_zip_file(file_path, findings):
                 })
 
             for info in zf.infolist():
-                # Pseudo-encryption check
                 is_encrypted = (info.flag_bits & 0x1) != 0
-                if is_encrypted and info.compress_size == info.file_size and info.CRC != 0:
-                     # A simple heuristic: if encrypted but size hasn't changed much, it could be weak or pseudo
-                     pass # More robust check is complex
 
-                # General Purpose Bit Flag - Bit 0 is the encrypted flag
-                if info.flag_bits & 0x1:
-                    # A common form of pseudo-encryption sets the encryption bit but uses 0 for CRC
-                    # This is not a foolproof check but a strong indicator for many CTF challenges.
-                    if info.CRC == 0 and info.compress_type == zipfile.ZIP_STORED:
-                         findings.append({
-                            "type": "Potential ZIP Pseudo-encryption", "severity": "WARNING",
-                            "description": f"File '{info.filename}' is marked as encrypted, but has a CRC of 0 and no compression. This is a strong indicator of pseudo-encryption.",
-                            "hint": "Try using a tool to fix the ZIP file headers or simply unzipping with a tool that ignores this flag."
+                # 1. Improved Pseudo-encryption & Plaintext Attack Detection
+                if is_encrypted:
+                    # General pseudo-encryption check
+                    findings.append({
+                        "type": "Encrypted ZIP Member", "severity": "WARNING",
+                        "description": f"File '{info.filename}' is marked as encrypted.",
+                        "hint": "If this file is truly encrypted, you may need a password. If it's pseudo-encrypted, some tools can ignore this flag."
+                    })
+                    # Plaintext attack vulnerability check
+                    if info.compress_type == zipfile.ZIP_DEFLATED:
+                        findings.append({
+                            "type": "Potential Known-Plaintext Attack", "severity": "WARNING",
+                            "description": f"File '{info.filename}' uses traditional ZipCrypto encryption. This is vulnerable to known-plaintext attacks.",
+                            "hint": "If you have an unencrypted version of this file (or at least 12 bytes of it), use a tool like bkcrack to recover the encryption keys."
                         })
 
-                # CRC check
+                # 2. Inner-file type mismatch and CRC check
                 try:
                     with zf.open(info, 'r') as member_file:
                         member_data = member_file.read()
-                        calculated_crc = zlib.crc32(member_data)
-                        if calculated_crc != info.CRC and not is_encrypted:
-                             findings.append({
-                                "type": "ZIP CRC Mismatch", "severity": "CRITICAL",
-                                "description": f"CRC32 mismatch for file '{info.filename}'. Expected {info.CRC}, got {calculated_crc}. The file may be corrupt or tampered with."
-                            })
+
+                        # Inner-file type mismatch
+                        _, inner_ext = os.path.splitext(info.filename)
+                        inner_magic = analyze_magic_bytes(member_data)
+                        if inner_magic['magic_bytes_type'] != 'Unknown' and inner_ext:
+                            # Map file extension to expected magic type for comparison
+                            expected_type_for_ext = 'Unknown'
+                            for magic, (ftype, mime) in MAGIC_BYTES_DB.items():
+                                if f".{ftype.lower()}" == inner_ext.lower():
+                                    expected_type_for_ext = ftype
+                                    break
+
+                            if inner_magic['magic_bytes_type'] != expected_type_for_ext:
+                                findings.append({
+                                    "type": "ZIP Inner File Type Mismatch", "severity": "WARNING",
+                                    "description": f"File '{info.filename}' inside the ZIP has an extension '{inner_ext}' but its content appears to be '{inner_magic['magic_bytes_type']}'.",
+                                })
+
+                        # CRC check
+                        if not is_encrypted:
+                            calculated_crc = zlib.crc32(member_data)
+                            if calculated_crc != info.CRC:
+                                 findings.append({
+                                    "type": "ZIP CRC Mismatch", "severity": "CRITICAL",
+                                    "description": f"CRC32 mismatch for file '{info.filename}'. Expected {info.CRC}, got {calculated_crc}. The file may be corrupt or tampered with."
+                                })
                 except Exception as e:
                     findings.append({"type": "ZIP Member Read Error", "severity":"WARNING", "description": f"Could not process member {info.filename}: {e}"})
 
     except zipfile.BadZipFile:
         findings.append({"type": "ZIP Error", "severity": "CRITICAL", "description": "The file is not a valid ZIP archive or is corrupted."})
 
+
+def analyze_strings_for_urls(strings_list, findings):
+    """Analyzes extracted strings for URLs."""
+    for s in strings_list:
+        for match in URL_REGEX.finditer(s['content']):
+            findings.append({
+                "type": "URL Found",
+                "severity": "INFO",
+                "description": f"Found a URL in the file.",
+                "offset": s['offset'] + match.start(),
+                "value": match.group(0)
+            })
 
 def analyze_strings_for_keywords(strings_list, findings):
     """Analyzes extracted strings for CTF-related keywords."""
@@ -268,6 +303,7 @@ def analyze_file(file_storage):
 
     # --- Deep Analysis ---
     analyze_strings_for_keywords(extracted_strings, findings)
+    analyze_strings_for_urls(extracted_strings, findings)
     analyze_eof_data(data, findings)
     if file_type_analysis['magic_bytes_type'] == 'ZIP':
         analyze_zip_file(temp_path, findings)
