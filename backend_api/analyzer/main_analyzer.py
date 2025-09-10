@@ -19,7 +19,8 @@ RECOMMENDED_TOOLS = {
     "Potential Known-Plaintext Attack": {"name": "bkcrack", "description": "A tool for breaking ZipCrypto encryption."},
     "Data Appended Past EOF": {"name": "binwalk / foremost", "description": "Tools for carving and extracting hidden files from data streams."},
     "Encrypted ZIP Member": {"name": "7-Zip / John the Ripper", "description": "7-Zip can sometimes open pseudo-encrypted files. John can be used for password cracking."},
-    "PNG CRC Mismatch": {"name": "pngcheck / Hex Editor", "description": "pngcheck can diagnose PNG errors. A hex editor allows for manual inspection and repair."}
+    "PNG CRC Mismatch": {"name": "pngcheck / Hex Editor", "description": "pngcheck can diagnose PNG errors. A hex editor allows for manual inspection and repair."},
+    "Hidden ZIP Entry Found": {"name": "A hex editor or forensic tool", "description": "These tools can help manually extract or analyze unindexed file entries."}
 }
 MAGIC_BYTES_DB = {
     b'\x89PNG\r\n\x1a\n': ('PNG', 'image/png'),
@@ -28,6 +29,8 @@ MAGIC_BYTES_DB = {
     b'GIF89a': ('GIF', 'image/gif'),
     b'%PDF-': ('PDF', 'application/pdf'),
     b'PK\x03\x04': ('ZIP', 'application/zip'),
+    b'Rar!\x1a\x07\x00': ('RAR', 'application/x-rar-compressed'),
+    b'Rar!\x1a\x07\x01\x00': ('RAR5', 'application/x-rar-compressed'),
 }
 
 # --- Helper Functions ---
@@ -151,9 +154,14 @@ def analyze_png_file(data, findings):
 
 
 def analyze_zip_file(file_path, findings):
-    """Performs deep analysis on ZIP files."""
+    """Performs deep analysis on ZIP files, including raw scans for hidden entries."""
+    LOCAL_HEADER_SIG = b'PK\x03\x04'
+
+    # --- Standard Analysis using zipfile library ---
+    official_filenames = set()
     try:
         with zipfile.ZipFile(file_path, 'r') as zf:
+            official_filenames = {info.filename for info in zf.infolist()}
             if zf.comment:
                 add_finding(findings,
                     type="ZIP Comment", severity="INFO",
@@ -163,61 +171,68 @@ def analyze_zip_file(file_path, findings):
 
             for info in zf.infolist():
                 is_encrypted = (info.flag_bits & 0x1) != 0
-
-                # 1. Improved Pseudo-encryption & Plaintext Attack Detection
                 if is_encrypted:
-                    add_finding(findings,
-                        type="Encrypted ZIP Member", severity="WARNING",
+                    add_finding(findings, type="Encrypted ZIP Member", severity="WARNING",
                         description=f"File '{info.filename}' is marked as encrypted.",
-                        hint="If this file is truly encrypted, you may need a password. If it's pseudo-encrypted, some tools can ignore this flag."
-                    )
+                        hint="If this file is truly encrypted, you may need a password. If it's pseudo-encrypted, some tools can ignore this flag.")
                     if info.compress_type == zipfile.ZIP_DEFLATED:
-                        add_finding(findings,
-                            type="Potential Known-Plaintext Attack", severity="WARNING",
-                            description=f"File '{info.filename}' uses traditional ZipCrypto encryption. This is vulnerable to known-plaintext attacks.",
-                            hint="If you have an unencrypted version of this file (or at least 12 bytes of it), use a tool like bkcrack to recover the encryption keys."
-                        )
+                        add_finding(findings, type="Potential Known-Plaintext Attack", severity="WARNING",
+                            description=f"File '{info.filename}' uses traditional ZipCrypto. This is vulnerable to known-plaintext attacks.",
+                            hint="If you have an unencrypted version of this file (at least 12 bytes), use a tool like bkcrack.")
 
-                # 2. Inner-file type mismatch and CRC check
                 try:
                     with zf.open(info, 'r') as member_file:
                         member_data = member_file.read()
-
-                        # Inner-file type mismatch
                         _, inner_ext = os.path.splitext(info.filename)
                         inner_magic = analyze_magic_bytes(member_data)
                         if inner_magic['magic_bytes_type'] != 'Unknown' and inner_ext:
-                            expected_type_for_ext = 'Unknown'
-                            for magic, (ftype, mime) in MAGIC_BYTES_DB.items():
-                                if f".{ftype.lower()}" == inner_ext.lower():
-                                    expected_type_for_ext = ftype
-                                    break
-
-                            if inner_magic['magic_bytes_type'] != expected_type_for_ext:
-                                add_finding(findings,
-                                    type="ZIP Inner File Type Mismatch", severity="WARNING",
-                                    description=f"File '{info.filename}' inside the ZIP has an extension '{inner_ext}' but its content appears to be '{inner_magic['magic_bytes_type']}'."
-                                )
-
-                        # CRC check
-                        if not is_encrypted:
-                            calculated_crc = zlib.crc32(member_data)
-                            if calculated_crc != info.CRC:
-                                 add_finding(findings,
-                                    type="ZIP CRC Mismatch", severity="CRITICAL",
-                                    description=f"CRC32 mismatch for file '{info.filename}'. Expected {info.CRC}, got {calculated_crc}. The file may be corrupt or tampered with."
-                                )
+                            expected_type = next((ftype for magic, (ftype, mime) in MAGIC_BYTES_DB.items() if f".{ftype.lower()}" == inner_ext.lower()), 'Unknown')
+                            if inner_magic['magic_bytes_type'] != expected_type:
+                                add_finding(findings, type="ZIP Inner File Type Mismatch", severity="WARNING",
+                                    description=f"File '{info.filename}' inside the ZIP has an extension '{inner_ext}' but its content appears to be '{inner_magic['magic_bytes_type']}'.")
+                        if not is_encrypted and zlib.crc32(member_data) != info.CRC:
+                             add_finding(findings, type="ZIP CRC Mismatch", severity="CRITICAL",
+                                description=f"CRC32 mismatch for file '{info.filename}'. Expected {info.CRC}, got {zlib.crc32(member_data)}.")
                 except Exception as e:
-                    add_finding(findings,
-                        type="ZIP Member Read Error", severity="WARNING",
-                        description=f"Could not process member {info.filename}: {e}"
-                    )
+                    add_finding(findings, type="ZIP Member Read Error", severity="WARNING", description=f"Could not process member {info.filename}: {e}")
 
     except zipfile.BadZipFile:
-        add_finding(findings,
-            type="ZIP Error", severity="CRITICAL",
-            description="The file is not a valid ZIP archive or is corrupted."
-        )
+        add_finding(findings, type="ZIP Error", severity="CRITICAL", description="The file is not a valid ZIP archive or is corrupted.")
+        return # Stop further analysis if the file isn't a valid zip
+
+    # --- Raw Scan for Hidden Files ---
+    with open(file_path, 'rb') as f:
+        data = f.read()
+
+    scanned_filenames = set()
+    offset = 0
+    while (offset := data.find(LOCAL_HEADER_SIG, offset)) != -1:
+        try:
+            # Parse local file header to get filename length
+            filename_len_offset = offset + 26
+            filename_length = struct.unpack('<H', data[filename_len_offset:filename_len_offset+2])[0]
+
+            extra_field_len_offset = filename_len_offset + 2
+            extra_field_length = struct.unpack('<H', data[extra_field_len_offset:extra_field_len_offset+2])[0]
+
+            # Extract filename
+            filename_offset = extra_field_len_offset + 2
+            scanned_filename = data[filename_offset:filename_offset+filename_length].decode('utf-8', 'ignore')
+            scanned_filenames.add(scanned_filename)
+
+            offset = filename_offset + filename_length + extra_field_length
+        except (struct.error, IndexError, UnicodeDecodeError):
+            offset += 1 # Move past the current signature to avoid an infinite loop on malformed headers
+            continue
+
+    hidden_files = scanned_filenames - official_filenames
+    if hidden_files:
+        for hidden_file in hidden_files:
+            add_finding(findings,
+                type="Hidden ZIP Entry Found", severity="CRITICAL",
+                description=f"A file entry for '{hidden_file}' was found via raw scan but is not listed in the ZIP's central directory.",
+                hint="This file is hidden from standard unzipping tools. Use a forensic tool to extract it."
+            )
 
 
 def analyze_strings_for_urls(strings_list, findings):
@@ -325,10 +340,18 @@ def analyze_file(file_storage):
     analyze_strings_for_keywords(extracted_strings, findings)
     analyze_strings_for_urls(extracted_strings, findings)
     analyze_eof_data(data, findings)
-    if file_type_analysis['magic_bytes_type'] == 'ZIP':
+
+    file_type = file_type_analysis['magic_bytes_type']
+    if file_type == 'ZIP':
         analyze_zip_file(temp_path, findings)
-    elif file_type_analysis['magic_bytes_type'] == 'PNG':
+    elif file_type == 'PNG':
         analyze_png_file(data, findings)
+    elif file_type in ('RAR', 'RAR5'):
+        add_finding(findings,
+            type="RAR Archive Detected", severity="INFO",
+            description="RAR archive analysis is not fully supported.",
+            hint="The RAR format is proprietary and complex. For deep inspection or to find hidden data, please use a dedicated tool like 7-Zip or WinRAR."
+        )
 
     # Clean up temporary file
     os.remove(temp_path)
