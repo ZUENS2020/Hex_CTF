@@ -9,6 +9,10 @@ const loadingIndicator = document.getElementById('loading-indicator');
 const errorDisplay = document.getElementById('error-display');
 const resultsContainer = document.getElementById('results-container');
 const stringFilter = document.getElementById('string-filter');
+const settingsBtn = document.getElementById('settings-btn');
+const settingsModal = document.getElementById('settings-modal');
+const closeModalBtn = document.querySelector('.close-btn');
+const aiSettingsForm = document.getElementById('ai-settings-form');
 
 // --- Utility Functions ---
 function escapeHTML(str) {
@@ -147,6 +151,15 @@ async function handleFormSubmit(event) {
     const formData = new FormData();
     formData.append('file', file);
 
+    // Append AI settings from localStorage to the form data
+    const savedConfig = localStorage.getItem('aiConfig');
+    if (savedConfig) {
+        const aiConfig = JSON.parse(savedConfig);
+        formData.append('ai_url', aiConfig.url || '');
+        formData.append('ai_key', aiConfig.key || '');
+        formData.append('ai_model', aiConfig.model || '');
+    }
+
     try {
         const response = await fetch(`${API_BASE_URL}/ctf_analyze`, {
             method: 'POST',
@@ -216,3 +229,57 @@ dropZone.addEventListener('drop', (e) => {
     }
 });
 stringFilter.addEventListener('keyup', handleFileFilter);
+
+// --- Settings Modal Logic ---
+function saveAiSettings() {
+    const aiConfig = {
+        url: document.getElementById('ai-url').value,
+        key: document.getElementById('ai-key').value,
+        model: document.getElementById('ai-model').value,
+    };
+    localStorage.setItem('aiConfig', JSON.stringify(aiConfig));
+    alert('AI 设置已保存！');
+    settingsModal.classList.add('hidden');
+}
+
+function loadAiSettings() {
+    const savedConfig = localStorage.getItem('aiConfig');
+    if (savedConfig) {
+        const aiConfig = JSON.parse(savedConfig);
+        document.getElementById('ai-url').value = aiConfig.url || '';
+        document.getElementById('ai-key').value = aiConfig.key || '';
+        document.getElementById('ai-model').value = aiConfig.model || '';
+    }
+}
+
+settingsBtn.addEventListener('click', () => settingsModal.classList.remove('hidden'));
+closeModalBtn.addEventListener('click', () => settingsModal.classList.add('hidden'));
+aiSettingsForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    saveAiSettings();
+});
+window.addEventListener('click', (e) => {
+    if (e.target === settingsModal) {
+        settingsModal.classList.add('hidden');
+    }
+});
+
+// Load settings on page load
+document.addEventListener('DOMContentLoaded', loadAiSettings);
+
+// --- Tab Switching Logic ---
+const tabNav = document.querySelector('.tab-nav');
+tabNav.addEventListener('click', (e) => {
+    if (e.target && e.target.classList.contains('tab-link')) {
+        // Remove active class from all tabs and panes
+        document.querySelectorAll('.tab-link').forEach(tab => tab.classList.remove('active'));
+        document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
+
+        // Add active class to the clicked tab
+        e.target.classList.add('active');
+
+        // Add active class to the corresponding pane
+        const tabId = e.target.getAttribute('data-tab');
+        document.getElementById(tabId).classList.add('active');
+    }
+});

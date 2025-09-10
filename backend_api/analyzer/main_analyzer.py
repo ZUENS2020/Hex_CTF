@@ -248,7 +248,7 @@ def analyze_eof_data(data, findings):
 
 # --- Main Orchestrator ---
 
-def analyze_file(file_storage):
+def analyze_file(file_storage, ai_config):
     """
     Main function to analyze a file from a Flask FileStorage object.
     """
@@ -320,7 +320,12 @@ def analyze_file(file_storage):
     if long_strings:
         ai_input_text += "Found long strings:\n" + "\n".join(long_strings[:5]) # Limit to 5 long strings
 
-    ai_results = analyze_text_with_ai(ai_input_text)
+    ai_results = analyze_text_with_ai(
+        ai_input_text,
+        api_url=ai_config.get('url'),
+        api_key=ai_config.get('key'),
+        model=ai_config.get('model')
+    )
 
     # Clean up temporary file
     os.remove(temp_path)

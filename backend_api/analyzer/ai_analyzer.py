@@ -1,26 +1,18 @@
-import os
 import requests
 import json
 
-def analyze_text_with_ai(text_to_analyze):
+def analyze_text_with_ai(text_to_analyze, api_url=None, api_key=None, model=None):
     """
     Sends text to a configurable AI API for analysis and returns the result.
 
-    Reads configuration from environment variables:
-    - AI_API_URL: The API endpoint for the AI service.
-    - AI_API_KEY: The authentication token for the API.
-    - AI_MODEL: The specific model to use for the analysis.
+    Accepts configuration directly. If any parameter is missing, it returns an error.
 
     Returns:
         A dictionary containing the AI's analysis or an error message.
     """
-    api_url = os.getenv("AI_API_URL")
-    api_key = os.getenv("AI_API_KEY")
-    model = os.getenv("AI_MODEL")
-
     if not all([api_url, api_key, model]):
         return {
-            "error": "AI analysis is not configured. Please set AI_API_URL, AI_API_KEY, and AI_MODEL environment variables."
+            "error": "AI analysis is not configured. Please provide AI API URL, Key, and Model in the settings."
         }
 
     system_prompt = (

@@ -34,7 +34,7 @@ def index():
 def ctf_analyze_route():
     """
     The main endpoint for file analysis.
-    Accepts a multipart/form-data request with a 'file' field.
+    Accepts a multipart/form-data request with a 'file' field and optional AI config.
     """
     if 'file' not in request.files:
         return jsonify({"error": "No file part in the request"}), 400
@@ -45,11 +45,16 @@ def ctf_analyze_route():
         return jsonify({"error": "No selected file"}), 400
 
     if file:
-        # Secure the filename to prevent directory traversal attacks
-        filename = secure_filename(file.filename)
+        # --- AI Configuration Handling ---
+        # Prioritize values from the form, fall back to environment variables
+        ai_config = {
+            'url': request.form.get('ai_url') or os.getenv("AI_API_URL"),
+            'key': request.form.get('ai_key') or os.getenv("AI_API_KEY"),
+            'model': request.form.get('ai_model') or os.getenv("AI_MODEL"),
+        }
 
         try:
-            analysis_results = analyze_file(file)
+            analysis_results = analyze_file(file, ai_config)
             return jsonify(analysis_results)
         except Exception as e:
             # Catch-all for any unexpected errors during analysis
