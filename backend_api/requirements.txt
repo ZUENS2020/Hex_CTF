@@ -1,5 +1,5 @@
 Flask
 Flask-Cors
-python-magic-bin
 numpy
 Pillow
+rarfile

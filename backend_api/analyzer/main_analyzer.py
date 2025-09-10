@@ -1,6 +1,5 @@
 import os
 import hashlib
-import magic
 import zlib
 import zipfile
 import re
@@ -8,6 +7,10 @@ import math
 import struct
 import numpy as np
 from PIL import Image
+try:
+    import rarfile
+except ImportError:
+    rarfile = None
 
 # --- Configuration ---
 STRING_MIN_LEN = 4
@@ -229,6 +232,36 @@ def analyze_zip_file(file_path, findings):
 
     return structure
 
+def analyze_rar_file(file_path, findings):
+    """Lists files inside a RAR archive using the rarfile library."""
+    if not rarfile:
+        add_finding(findings, type="RAR Support Notice", severity="INFO",
+            description="The 'rarfile' library is not installed in the environment. RAR analysis is limited.")
+        return None
+
+    try:
+        with rarfile.RarFile(file_path, 'r') as rf:
+            structure = []
+            for info in rf.infolist():
+                structure.append({
+                    "type": "rar_entry", "name": info.filename,
+                    "uncompressed_size": info.file_size,
+                    "timestamp": info.date_time,
+                    "is_dir": info.isdir(),
+                })
+            return structure
+    except rarfile.NotRarFile:
+        add_finding(findings, type="RAR Error", severity="CRITICAL",
+            description="The file is not a valid RAR archive, despite matching magic bytes.")
+    except rarfile.PasswordRequired:
+        add_finding(findings, type="RAR Encrypted", severity="WARNING",
+            description="The RAR archive is encrypted and requires a password to list contents.")
+    except Exception as e:
+        add_finding(findings, type="RAR Read Error", severity="CRITICAL",
+            description=f"An error occurred while reading the RAR file: {e}")
+
+    return None
+
 
 def analyze_strings_for_urls(strings_list, findings):
     """Analyzes extracted strings for URLs."""
@@ -305,32 +338,14 @@ def analyze_file(file_storage):
 
     # --- File Type Analysis ---
     magic_analysis = analyze_magic_bytes(data)
-    try:
-        libmagic_type = magic.from_buffer(data, mime=True)
-    except Exception as e:
-        # If libmagic fails, we can't make a comparison, so we default to a non-mismatching type
-        libmagic_type = "N/A"
-
     _, extension = os.path.splitext(filename)
 
-    # A mismatch occurs ONLY if libmagic provides a valid, different MIME type.
-    # We ignore cases where libmagic fails ("N/A") or gives a generic response.
-    type_mismatch = (
-        libmagic_type not in ("N/A", "application/octet-stream") and
-        magic_analysis.get('mime_type') != libmagic_type
-    )
-
+    # Since python-magic-bin is unavailable, we rely solely on our internal magic byte DB.
+    # The advanced mismatch check is no longer possible. We can add a simple one if needed.
     file_type_analysis = {
         "magic_bytes_type": magic_analysis['magic_bytes_type'],
         "extension": extension,
-        "libmagic_type": libmagic_type,
-        "type_mismatch": type_mismatch
     }
-    if type_mismatch:
-        add_finding(findings,
-            type="File Type Mismatch", severity="WARNING",
-            description=f"File extension '{extension}' does not match the detected content type '{libmagic_type}'. The file may be disguised."
-        )
 
     # --- Deep Analysis ---
     analyze_strings_for_keywords(extracted_strings, findings)
@@ -343,11 +358,7 @@ def analyze_file(file_storage):
     elif file_type == 'PNG':
         file_structure = analyze_png_file(data, findings)
     elif file_type in ('RAR', 'RAR5'):
-        add_finding(findings,
-            type="RAR Archive Detected", severity="INFO",
-            description="RAR archive analysis is not fully supported.",
-            hint="The RAR format is proprietary and complex. For deep inspection or to find hidden data, please use a dedicated tool like 7-Zip or WinRAR."
-        )
+        file_structure = analyze_rar_file(temp_path, findings)
 
     # Clean up temporary file
     os.remove(temp_path)
