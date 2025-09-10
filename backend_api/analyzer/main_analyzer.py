@@ -23,7 +23,8 @@ RECOMMENDED_TOOLS = {
     "Data Appended Past EOF": {"name": "binwalk / foremost", "description": "Tools for carving and extracting hidden files from data streams."},
     "Encrypted ZIP Member": {"name": "7-Zip / John the Ripper", "description": "7-Zip can sometimes open pseudo-encrypted files. John can be used for password cracking."},
     "PNG CRC Mismatch": {"name": "pngcheck / Hex Editor", "description": "pngcheck can diagnose PNG errors. A hex editor allows for manual inspection and repair."},
-    "Hidden ZIP Entry Found": {"name": "A hex editor or forensic tool", "description": "These tools can help manually extract or analyze unindexed file entries."}
+    "Hidden ZIP Entry Found": {"name": "A hex editor or forensic tool", "description": "These tools can help manually extract or analyze unindexed file entries."},
+    "LSB Hidden Data": {"name": "Stegsolve / zsteg", "description": "Tools for manual LSB analysis and extraction."}
 }
 MAGIC_BYTES_DB = {
     b'\x89PNG\r\n\x1a\n': ('PNG', 'image/png'),
@@ -262,6 +263,55 @@ def analyze_rar_file(file_path, findings):
 
     return None
 
+def analyze_image_steganography(image_path, findings):
+    """Extracts LSB data from an image and performs secondary analysis on it."""
+    try:
+        with Image.open(image_path) as img:
+            pixels = img.convert("RGB").load()
+            width, height = img.size
+
+            binary_data = ""
+            for y in range(height):
+                for x in range(width):
+                    r, g, b = pixels[x, y]
+                    binary_data += bin(r)[-1]
+                    binary_data += bin(g)[-1]
+                    binary_data += bin(b)[-1]
+
+            # Convert binary string to bytes
+            hidden_bytes = bytearray()
+            for i in range(0, len(binary_data), 8):
+                byte = binary_data[i:i+8]
+                if len(byte) == 8:
+                    hidden_bytes.append(int(byte, 2))
+
+            hidden_bytes = bytes(hidden_bytes)
+
+            # Secondary analysis on the extracted data
+            if not hidden_bytes:
+                return
+
+            # Check for magic bytes in the hidden data
+            hidden_magic = analyze_magic_bytes(hidden_bytes)
+            if hidden_magic['magic_bytes_type'] != 'Unknown':
+                add_finding(findings, type="LSB Hidden Data", severity="CRITICAL",
+                    description=f"Detected a potential hidden file in the LSB layer. Magic bytes suggest it is a '{hidden_magic['magic_bytes_type']}' file.",
+                    hint="The full LSB data stream may contain a complete file. Try extracting it manually.")
+
+            # Check for strings in the hidden data
+            hidden_strings = extract_strings(hidden_bytes)
+            for s in hidden_strings:
+                if s['is_flag']:
+                    add_finding(findings, type="LSB Hidden Data", severity="CRITICAL",
+                        description="Found a potential flag in the LSB data.", value=s['content'])
+                elif len(s['content']) > 10: # Report any reasonably long string
+                     add_finding(findings, type="LSB Hidden Data", severity="WARNING",
+                        description="Found a long string in the LSB data.", value=s['content'])
+
+    except Exception as e:
+        add_finding(findings, type="Image Analysis Error", severity="WARNING",
+            description=f"Could not perform steganography analysis on the image: {e}")
+
 
 def analyze_strings_for_urls(strings_list, findings):
     """Analyzes extracted strings for URLs."""
@@ -357,6 +407,7 @@ def analyze_file(file_storage):
         file_structure = analyze_zip_file(temp_path, findings)
     elif file_type == 'PNG':
         file_structure = analyze_png_file(data, findings)
+        analyze_image_steganography(temp_path, findings)
     elif file_type in ('RAR', 'RAR5'):
         file_structure = analyze_rar_file(temp_path, findings)
 
