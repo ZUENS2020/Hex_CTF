@@ -10,13 +10,20 @@
 .
 ├── backend_api/
 │   ├── analyzer/
-│   │   └── main_analyzer.py
+│   │   ├── common.py
+│   │   ├── main_analyzer.py
+│   │   ├── zip.py
+│   │   ├── png.py
+│   │   ├── rar.py
+│   │   └── ... (更多分析模块)
 │   ├── app.py
 │   └── requirements.txt
 ├── frontend_static/
 │   ├── index.html
 │   ├── script.js
-│   └── style.css
+│   ├── style.css
+│   ├── start_frontend.bat
+│   └── start_frontend.sh
 └── README.md
 ```
 

@@ -1,5 +1,0 @@
-Flask
-Flask-Cors
-numpy
-Pillow
-rarfile
