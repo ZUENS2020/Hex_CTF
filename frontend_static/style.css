@@ -273,3 +273,36 @@ h2 {
 .structure-table tr:nth-child(even) {
     background-color: rgba(255,255,255,0.02);
 }
+
+/* Enhanced Structure View */
+.structure-item {
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    margin-bottom: 15px;
+    background-color: var(--bg-color);
+}
+.structure-item.unindexed {
+    border-left: 4px solid var(--critical-color);
+}
+.structure-title {
+    background-color: rgba(88, 166, 255, 0.1);
+    padding: 10px 15px;
+    font-weight: bold;
+    font-family: var(--font-mono);
+    border-bottom: 1px solid var(--border-color);
+}
+.detail-list {
+    list-style: none;
+    padding: 15px;
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+}
+.detail-list li {
+    padding: 4px 0;
+}
+.detail-list li strong {
+    color: var(--secondary-text);
+    display: inline-block;
+    width: 180px;
+}

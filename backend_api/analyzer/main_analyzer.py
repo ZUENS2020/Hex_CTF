@@ -157,10 +157,24 @@ def analyze_png_file(data, findings):
 
             if chunk_type_bytes == b'IHDR':
                 if length == 13:
-                    width, height = struct.unpack('>II', chunk_data[:8])
+                    # Unpack the full IHDR chunk
+                    width, height, bit_depth, color_type, comp_method, filter_method, interlace_method = \
+                        struct.unpack('>IIBBBBB', chunk_data)
+
+                    # Add a finding with the basic dimensions
                     add_finding(findings, type="PNG Image Dimensions", severity="INFO",
                         description=f"PNG IHDR chunk found. Image dimensions are {width}x{height}.",
                         value=f"Width: {width}, Height: {height}")
+
+                    # Replace the simple chunk entry in the structure with a detailed one
+                    for item in structure:
+                        if item["name"] == "IHDR":
+                            item["details"] = {
+                                "width": width, "height": height, "bit_depth": bit_depth,
+                                "color_type": color_type, "compression_method": comp_method,
+                                "filter_method": filter_method, "interlace_method": interlace_method
+                            }
+                            break
                 else:
                     add_finding(findings, type="PNG Malformed IHDR", severity="WARNING",
                         description="PNG IHDR chunk has an incorrect length.", offset=offset - 8)
@@ -177,92 +191,72 @@ def analyze_png_file(data, findings):
 
 
 def analyze_zip_file(file_path, findings):
-    """Performs deep analysis on ZIP files, including raw scans for hidden entries."""
+    """Performs deep structure analysis on ZIP files by raw-scanning for headers."""
     LOCAL_HEADER_SIG = b'PK\x03\x04'
     structure = []
 
-    # --- Standard Analysis using zipfile library ---
+    with open(file_path, 'rb') as f:
+        data = f.read()
+
+    # Get official file list from Central Directory for comparison later
     official_filenames = set()
     try:
         with zipfile.ZipFile(file_path, 'r') as zf:
             official_filenames = {info.filename for info in zf.infolist()}
-            if zf.comment:
-                add_finding(findings, type="ZIP Comment", severity="INFO",
-                    description="The ZIP archive contains a global comment.",
-                    value=zf.comment.decode('utf-8', 'ignore'))
-
-            for info in zf.infolist():
-                # Populate structure
-                structure.append({
-                    "type": "zip_entry", "name": info.filename,
-                    "compressed_size": info.compress_size, "uncompressed_size": info.file_size,
-                    "timestamp": info.date_time, "crc": info.CRC,
-                    "is_encrypted": (info.flag_bits & 0x1) != 0
-                })
-
-                is_encrypted = (info.flag_bits & 0x1) != 0
-                if is_encrypted:
-                    add_finding(findings, type="Encrypted ZIP Member", severity="WARNING",
-                        description=f"File '{info.filename}' is marked as encrypted.",
-                        hint="If this file is truly encrypted, you may need a password. If it's pseudo-encrypted, some tools can ignore this flag.")
-                    if info.compress_type == zipfile.ZIP_DEFLATED:
-                        add_finding(findings, type="Potential Known-Plaintext Attack", severity="WARNING",
-                            description=f"File '{info.filename}' uses traditional ZipCrypto. This is vulnerable to known-plaintext attacks.",
-                            hint="If you have an unencrypted version of this file (at least 12 bytes), use a tool like bkcrack.")
-
-                try:
-                    with zf.open(info, 'r') as member_file:
-                        member_data = member_file.read()
-                        _, inner_ext = os.path.splitext(info.filename)
-                        inner_magic = analyze_magic_bytes(member_data)
-                        if inner_magic['magic_bytes_type'] != 'Unknown' and inner_ext:
-                            expected_type = next((ftype for magic, (ftype, mime) in MAGIC_BYTES_DB.items() if f".{ftype.lower()}" == inner_ext.lower()), 'Unknown')
-                            if inner_magic['magic_bytes_type'] != expected_type:
-                                add_finding(findings, type="ZIP Inner File Type Mismatch", severity="WARNING",
-                                    description=f"File '{info.filename}' inside the ZIP has an extension '{inner_ext}' but its content appears to be '{inner_magic['magic_bytes_type']}'.")
-                        if not is_encrypted and zlib.crc32(member_data) != info.CRC:
-                             add_finding(findings, type="ZIP CRC Mismatch", severity="CRITICAL",
-                                description=f"CRC32 mismatch for file '{info.filename}'. Expected {info.CRC}, got {zlib.crc32(member_data)}.")
-                except Exception as e:
-                    add_finding(findings, type="ZIP Member Read Error", severity="WARNING", description=f"Could not process member {info.filename}: {e}")
-
     except zipfile.BadZipFile:
-        add_finding(findings, type="ZIP Error", severity="CRITICAL", description="The file is not a valid ZIP archive or is corrupted.")
-        return # Stop further analysis if the file isn't a valid zip
+        pass # Will be handled by raw scan
 
-    # --- Raw Scan for Hidden Files ---
-    with open(file_path, 'rb') as f:
-        data = f.read()
-
-    scanned_filenames = set()
     offset = 0
     while (offset := data.find(LOCAL_HEADER_SIG, offset)) != -1:
         try:
-            # Parse local file header to get filename length
-            filename_len_offset = offset + 26
-            filename_length = struct.unpack('<H', data[filename_len_offset:filename_len_offset+2])[0]
+            header_data = data[offset:offset+30]
+            if len(header_data) < 30:
+                break # Truncated header
 
-            extra_field_len_offset = filename_len_offset + 2
-            extra_field_length = struct.unpack('<H', data[extra_field_len_offset:extra_field_len_offset+2])[0]
+            # Unpack the local file header structure
+            (sig, ver, gp_flag, comp_meth, mod_time, mod_date, crc32, comp_size, uncomp_size, name_len, extra_len) = \
+                struct.unpack('<IHHHHHIIIHH', header_data)
 
-            # Extract filename
-            filename_offset = extra_field_len_offset + 2
-            scanned_filename = data[filename_offset:filename_offset+filename_length].decode('utf-8', 'ignore')
-            scanned_filenames.add(scanned_filename)
+            # Decode filename
+            filename_bytes = data[offset+30 : offset+30+name_len]
+            filename = filename_bytes.decode('utf-8', 'ignore')
 
-            offset = filename_offset + filename_length + extra_field_length
-        except (struct.error, IndexError, UnicodeDecodeError):
-            offset += 1 # Move past the current signature to avoid an infinite loop on malformed headers
+            is_encrypted = (gp_flag & 0x1) != 0
+
+            header_info = {
+                "type": "zip_local_header",
+                "offset": f"0x{offset:X}",
+                "filename": filename,
+                "version_needed": ver,
+                "general_purpose_bit_flag": f"0x{gp_flag:04X}",
+                "compression_method": comp_meth,
+                "crc-32": f"0x{crc32:08X}",
+                "compressed_size": comp_size,
+                "uncompressed_size": uncomp_size,
+                "is_encrypted": is_encrypted,
+                "is_indexed": filename in official_filenames
+            }
+            structure.append(header_info)
+
+            # Add findings based on parsed data
+            if not header_info["is_indexed"] and filename:
+                 add_finding(findings, type="Hidden ZIP Entry Found", severity="CRITICAL",
+                    description=f"A file entry for '{filename}' was found via raw scan but is not listed in the ZIP's central directory.",
+                    offset=offset)
+
+            if is_encrypted:
+                add_finding(findings, type="Encrypted ZIP Member", severity="WARNING",
+                    description=f"File '{filename}' is marked as encrypted (GP Flag Bit 0 is set).",
+                    offset=offset)
+                if comp_meth == 8: # Deflate
+                    add_finding(findings, type="Potential Known-Plaintext Attack", severity="WARNING",
+                        description=f"File '{filename}' uses traditional ZipCrypto (Deflate), which is vulnerable to known-plaintext attacks.",
+                        offset=offset)
+
+            offset += 30 + name_len + extra_len + comp_size
+        except (struct.error, IndexError):
+            offset += 1
             continue
-
-    hidden_files = scanned_filenames - official_filenames
-    if hidden_files:
-        for hidden_file in hidden_files:
-            add_finding(findings,
-                type="Hidden ZIP Entry Found", severity="CRITICAL",
-                description=f"A file entry for '{hidden_file}' was found via raw scan but is not listed in the ZIP's central directory.",
-                hint="This file is hidden from standard unzipping tools. Use a forensic tool to extract it."
-            )
 
     return structure
 

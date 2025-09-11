@@ -86,35 +86,75 @@ function renderFileStructure(structure) {
         return;
     }
 
-    const table = document.createElement('table');
-    table.className = 'structure-table';
-    const thead = document.createElement('thead');
-    const tbody = document.createElement('tbody');
+    // --- Renders a simple key-value block for details ---
+    const createDetailBlock = (details) => {
+        let blockHtml = '<ul class="detail-list">';
+        for (const [key, value] of Object.entries(details)) {
+            blockHtml += `<li><strong>${escapeHTML(key)}:</strong> ${escapeHTML(value)}</li>`;
+        }
+        blockHtml += '</ul>';
+        return blockHtml;
+    };
 
-    // Dynamically create headers based on the type of the first item
-    const headers = Object.keys(structure[0]);
-    const trHead = document.createElement('tr');
-    headers.forEach(header => {
-        const th = document.createElement('th');
-        th.textContent = escapeHTML(header);
-        trHead.appendChild(th);
-    });
-    thead.appendChild(trHead);
+    // --- Main rendering logic ---
+    const firstItemType = structure[0].type;
+    let html = '';
 
-    // Create rows
-    structure.forEach(item => {
-        const tr = document.createElement('tr');
-        headers.forEach(header => {
-            const td = document.createElement('td');
-            td.textContent = escapeHTML(item[header]);
-            tr.appendChild(td);
+    if (firstItemType === 'zip_local_header') {
+        html += '<h3>ZIP 本地文件头 (Local File Headers)</h3>';
+        structure.forEach(header => {
+            html += `<div class="structure-item ${header.is_indexed ? '' : 'unindexed'}">`;
+            html += `<div class="structure-title">${escapeHTML(header.filename)} ${header.is_indexed ? '' : '(未索引!)'}</div>`;
+            html += createDetailBlock({
+                "Offset": header.offset, "Version Needed": header.version_needed,
+                "GP Bit Flag": header.general_purpose_bit_flag, "Compression Method": header.compression_method,
+                "CRC-32": header['crc-32'], "Compressed Size": `${header.compressed_size} bytes`,
+                "Uncompressed Size": `${header.uncompressed_size} bytes`, "Is Encrypted": header.is_encrypted
+            });
+            html += `</div>`;
         });
-        tbody.appendChild(tr);
-    });
+    } else if (firstItemType === 'chunk') {
+        html += '<h3>PNG 文件块 (Chunks)</h3>';
+        structure.forEach(chunk => {
+            html += `<div class="structure-item">`;
+            html += `<div class="structure-title">${escapeHTML(chunk.name)}</div>`;
+            let details = { "Offset": `0x${chunk.offset.toString(16).toUpperCase()}`, "Size": `${chunk.size} bytes` };
+            if (chunk.details) {
+                // If we have parsed details (like for IHDR), merge them in
+                Object.assign(details, chunk.details);
+            }
+            html += createDetailBlock(details);
+            html += `</div>`;
+        });
+    } else { // Fallback for RAR or other simple structures
+        const table = document.createElement('table');
+        table.className = 'structure-table';
+        const thead = document.createElement('thead');
+        const tbody = document.createElement('tbody');
+        const headers = Object.keys(structure[0]);
+        const trHead = document.createElement('tr');
+        headers.forEach(header => {
+            const th = document.createElement('th');
+            th.textContent = escapeHTML(header);
+            trHead.appendChild(th);
+        });
+        thead.appendChild(trHead);
+        structure.forEach(item => {
+            const tr = document.createElement('tr');
+            headers.forEach(header => {
+                const td = document.createElement('td');
+                td.textContent = escapeHTML(String(item[header]));
+                tr.appendChild(td);
+            });
+            tbody.appendChild(tr);
+        });
+        table.appendChild(thead);
+        table.appendChild(tbody);
+        container.appendChild(table);
+        return;
+    }
 
-    table.appendChild(thead);
-    table.appendChild(tbody);
-    container.appendChild(table);
+    container.innerHTML = html;
 }
 
 function renderHexPreview(preview) {
