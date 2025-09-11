@@ -12,17 +12,23 @@ from .analyzers.base_analyzer import BaseAnalyzer
 def load_analyzers():
     """Dynamically loads all analyzer classes from the 'analyzers' directory."""
     analyzers = []
+    # __package__ will be 'backend_api.analyzer' when this module is imported
+    package = __package__
     analyzer_dir = os.path.join(os.path.dirname(__file__), 'analyzers')
+
     for filename in os.listdir(analyzer_dir):
         if filename.endswith('_analyzer.py') and filename != 'base_analyzer.py':
-            module_name = f"backend_api.analyzer.analyzers.{filename[:-3]}"
+            # Construct a relative module path (e.g., '.analyzers.zip_analyzer')
+            module_name = f".analyzers.{filename[:-3]}"
             try:
-                module = importlib.import_module(module_name)
+                # Perform a relative import
+                module = importlib.import_module(module_name, package=package)
                 for name, obj in inspect.getmembers(module, inspect.isclass):
                     if issubclass(obj, BaseAnalyzer) and obj is not BaseAnalyzer:
                         analyzers.append(obj())
             except ImportError as e:
-                print(f"Error loading analyzer {module_name}: {e}")
+                # This print is helpful for debugging in the server console
+                print(f"Error loading analyzer {module_name} from package {package}: {e}")
     return analyzers
 
 # --- Main Orchestrator ---
