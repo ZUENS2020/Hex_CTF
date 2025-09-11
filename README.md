@@ -10,12 +10,8 @@
 .
 ├── backend_api/
 │   ├── analyzer/
-│   │   ├── common.py
-│   │   ├── main_analyzer.py
-│   │   ├── zip.py
-│   │   ├── png.py
-│   │   ├── rar.py
-│   │   └── ... (更多分析模块)
+│   │   ├── __init__.py
+│   │   └── main_analyzer.py
 │   ├── app.py
 │   └── requirements.txt
 ├── frontend_static/
@@ -135,11 +131,3 @@ flask run --host=0.0.0.0
 2.  访问前端 URL: **`http://localhost:8080`** (或您用于前端的端口)。
 
 您现在可以上传文件并查看分析结果了。前端将与运行在 5000 端口的后端 API 进行通信。如果您的后端位于不同的 URL，可以编辑 `frontend_static/script.js` 文件顶部的 `API_BASE_URL` 常量。
-
----
-
-## 为开发者：扩展分析器
-
-本工具的后端分析器采用模块化设计，您可以轻松地为其添加新的文件类型分析模块。
-
-详细的开发步骤和代码模板，请参阅[**如何创建新模块指南**](./backend_api/analyzer/HOW_TO_CREATE_A_MODULE.md)。
