@@ -2,21 +2,49 @@ import os
 import hashlib
 import importlib
 import re
+import json
 import numpy as np
-from .common import add_finding, MAGIC_BYTES_DB, CTF_FLAG_REGEX, CTF_KEYWORD_REGEX, URL_REGEX
-from . import zip as zip_analyzer
-from . import png as png_analyzer
-from . import rar as rar_analyzer
+from .common import add_finding, CTF_FLAG_REGEX, CTF_KEYWORD_REGEX, URL_REGEX
 
-# A mapping from file type (from MAGIC_BYTES_DB) to the analyzer module
-ANALYZER_MAPPING = {
-    "ZIP": "zip",
-    "PNG": "png",
-    "RAR": "rar",
-    "RAR5": "rar",
-}
+# --- Dynamic Module and Magic Byte Loading ---
 
-# --- Universal Helper Functions ---
+MAGIC_BYTES_DB = []
+ANALYZER_MAPPING = {}
+
+def load_modules_from_config():
+    """Reads modules.json and populates the global config variables."""
+    global MAGIC_BYTES_DB, ANALYZER_MAPPING
+    config_path = os.path.join(os.path.dirname(__file__), 'modules.json')
+    try:
+        with open(config_path, 'r') as f:
+            modules = json.load(f)
+
+        temp_magic_db = []
+        temp_analyzer_map = {}
+        for mod in modules:
+            try:
+                magic_bytes = bytes.fromhex(mod["magic_hex"])
+                temp_magic_db.append((magic_bytes, mod["offset"], mod["type_name"], mod["mime_type"]))
+                if mod["module_name"]:
+                    temp_analyzer_map[mod["type_name"]] = mod["module_name"]
+            except (KeyError, ValueError) as e:
+                print(f"Skipping invalid module config entry: {mod}. Error: {e}")
+
+        MAGIC_BYTES_DB = temp_magic_db
+        ANALYZER_MAPPING = temp_analyzer_map
+        print(f"Successfully loaded {len(MAGIC_BYTES_DB)} magic byte signatures and {len(ANALYZER_MAPPING)} analyzer modules.")
+
+    except FileNotFoundError:
+        print(f"ERROR: modules.json not found at {config_path}")
+    except json.JSONDecodeError:
+        print(f"ERROR: Could not decode modules.json. Please check for syntax errors.")
+
+# Load modules when this file is imported
+load_modules_from_config()
+
+
+# --- Universal Analysis Functions ---
+
 def calculate_hashes(data):
     return {'md5': hashlib.md5(data).hexdigest(), 'sha1': hashlib.sha1(data).hexdigest(), 'sha256': hashlib.sha256(data).hexdigest()}
 
@@ -56,29 +84,20 @@ def analyze_magic_bytes(data):
                 return {"magic_bytes_type": file_type, "mime_type": mime}
     return {"magic_bytes_type": "Unknown", "mime_type": "application/octet-stream"}
 
-# --- MCP Dispatcher ---
-def analyze_for_mcp(file_storage, command):
-    file_storage.seek(0)
-    data = file_storage.read()
-
-    if command == "get_hashes":
-        return calculate_hashes(data)
-    elif command == "get_strings":
-        return [s['content'] for s in extract_strings(data)]
-    # Add other MCP commands here...
-    else:
-        return {"error": f"Unknown or unsupported command: {command}"}
-
 # --- Main UI Analyzer ---
+
 def _save_temp_file(file_storage):
+    """Saves the file to a temporary location and returns the path."""
     temp_dir = "/tmp" if os.name == 'posix' else os.environ.get("TEMP", "C:\\temp")
     if not os.path.exists(temp_dir): os.makedirs(temp_dir)
     temp_path = os.path.join(temp_dir, file_storage.filename)
+    file_storage.seek(0) # Ensure pointer is at the start before saving
     file_storage.save(temp_path)
     return temp_path
 
 def analyze_file(file_storage):
     filename = file_storage.filename
+    file_storage.seek(0)
     data = file_storage.read()
     temp_path = _save_temp_file(file_storage)
 
@@ -92,12 +111,14 @@ def analyze_file(file_storage):
         try:
             module_name = f".{ANALYZER_MAPPING[file_type]}"
             analyzer_module = importlib.import_module(module_name, package='backend_api.analyzer')
-            if file_type in ["ZIP", "RAR", "RAR5"]:
-                 file_structure = analyzer_module.analyze(temp_path, findings)
+
+            # Pass data or path based on module needs
+            if ANALYZER_MAPPING[file_type] in ["zip", "rar"]:
+                file_structure = analyzer_module.analyze(temp_path, findings)
             else:
-                 file_structure = analyzer_module.analyze(data, findings)
+                file_structure = analyzer_module.analyze(data, findings)
         except ImportError:
-            add_finding(findings, "Analyzer Error", "CRITICAL", f"Could not find or import the analyzer module for type '{file_type}'.")
+            add_finding(findings, "Analyzer Error", "CRITICAL", f"Could not find or import the analyzer module: '{ANALYZER_MAPPING[file_type]}.py'")
         except Exception as e:
             add_finding(findings, "Analyzer Error", "CRITICAL", f"An error occurred in the '{file_type}' analyzer: {e}")
 
@@ -117,3 +138,6 @@ def analyze_file(file_storage):
         "findings": findings, "extracted_strings": extracted_strings,
         "file_structure": file_structure,
     }
+
+# Note: MCP dispatcher is removed for now to focus on the main UI logic refactor.
+# It can be added back easily by calling the specific helper functions.
