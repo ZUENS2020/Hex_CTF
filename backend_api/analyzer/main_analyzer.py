@@ -109,8 +109,9 @@ def analyze_file(file_storage):
 
     if file_type in ANALYZER_MAPPING:
         try:
-            module_name = f".{ANALYZER_MAPPING[file_type]}"
-            analyzer_module = importlib.import_module(module_name, package='backend_api.analyzer')
+            # Use an absolute-style import path from the project root
+            module_name = f"backend_api.analyzer.{ANALYZER_MAPPING[file_type]}"
+            analyzer_module = importlib.import_module(module_name)
 
             # Pass data or path based on module needs
             if ANALYZER_MAPPING[file_type] in ["zip", "rar"]:
