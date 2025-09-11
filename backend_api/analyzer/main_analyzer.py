@@ -1,16 +1,22 @@
 import os
 import hashlib
+import importlib
 import re
 import numpy as np
-
-# Assuming 'common.py' and other analyzers will be populated and imported
-from .common import add_finding, CTF_FLAG_REGEX, CTF_KEYWORD_REGEX, URL_REGEX, MAGIC_BYTES_DB
+from .common import add_finding, MAGIC_BYTES_DB, CTF_FLAG_REGEX, CTF_KEYWORD_REGEX, URL_REGEX
 from . import zip as zip_analyzer
 from . import png as png_analyzer
 from . import rar as rar_analyzer
 
-# --- Universal Helper Functions ---
+# A mapping from file type (from MAGIC_BYTES_DB) to the analyzer module
+ANALYZER_MAPPING = {
+    "ZIP": "zip",
+    "PNG": "png",
+    "RAR": "rar",
+    "RAR5": "rar",
+}
 
+# --- Universal Helper Functions ---
 def calculate_hashes(data):
     return {'md5': hashlib.md5(data).hexdigest(), 'sha1': hashlib.sha1(data).hexdigest(), 'sha256': hashlib.sha256(data).hexdigest()}
 
@@ -51,11 +57,7 @@ def analyze_magic_bytes(data):
     return {"magic_bytes_type": "Unknown", "mime_type": "application/octet-stream"}
 
 # --- MCP Dispatcher ---
-
 def analyze_for_mcp(file_storage, command):
-    """
-    Dispatcher for the MCP endpoint. Executes a single command.
-    """
     file_storage.seek(0)
     data = file_storage.read()
 
@@ -63,22 +65,12 @@ def analyze_for_mcp(file_storage, command):
         return calculate_hashes(data)
     elif command == "get_strings":
         return [s['content'] for s in extract_strings(data)]
-    elif command == "get_entropy":
-        return {"entropy": calculate_entropy(data)}
-    elif command == "get_zip_structure":
-        temp_path = _save_temp_file(file_storage)
-        structure = zip_analyzer.analyze(temp_path, [])
-        os.remove(temp_path)
-        return structure
-    elif command == "get_png_structure":
-        return png_analyzer.analyze(data, [])
+    # Add other MCP commands here...
     else:
         return {"error": f"Unknown or unsupported command: {command}"}
 
 # --- Main UI Analyzer ---
-
 def _save_temp_file(file_storage):
-    """Saves the file to a temporary location and returns the path."""
     temp_dir = "/tmp" if os.name == 'posix' else os.environ.get("TEMP", "C:\\temp")
     if not os.path.exists(temp_dir): os.makedirs(temp_dir)
     temp_path = os.path.join(temp_dir, file_storage.filename)
@@ -86,9 +78,6 @@ def _save_temp_file(file_storage):
     return temp_path
 
 def analyze_file(file_storage):
-    """
-    Main orchestrator for the UI. Runs all analyses.
-    """
     filename = file_storage.filename
     data = file_storage.read()
     temp_path = _save_temp_file(file_storage)
@@ -99,12 +88,18 @@ def analyze_file(file_storage):
     file_type_analysis = analyze_magic_bytes(data)
     file_type = file_type_analysis.get('magic_bytes_type')
 
-    # This part will be empty until we migrate the logic back in
-    if file_type == "ZIP":
-        file_structure = zip_analyzer.analyze(temp_path, findings)
-    elif file_type == "PNG":
-        file_structure = png_analyzer.analyze(data, findings)
-    # ... etc.
+    if file_type in ANALYZER_MAPPING:
+        try:
+            module_name = f".{ANALYZER_MAPPING[file_type]}"
+            analyzer_module = importlib.import_module(module_name, package='backend_api.analyzer')
+            if file_type in ["ZIP", "RAR", "RAR5"]:
+                 file_structure = analyzer_module.analyze(temp_path, findings)
+            else:
+                 file_structure = analyzer_module.analyze(data, findings)
+        except ImportError:
+            add_finding(findings, "Analyzer Error", "CRITICAL", f"Could not find or import the analyzer module for type '{file_type}'.")
+        except Exception as e:
+            add_finding(findings, "Analyzer Error", "CRITICAL", f"An error occurred in the '{file_type}' analyzer: {e}")
 
     extracted_strings = extract_strings(data)
     for s in extracted_strings:
