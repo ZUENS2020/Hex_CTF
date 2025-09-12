@@ -8,18 +8,23 @@
 
 ```
 .
+├── config.json             # <--- 项目配置文件
 ├── backend_api/
 │   ├── analyzer/
 │   │   ├── analyzers/      # <--- 模块化分析器目录
 │   │   │   ├── __init__.py
 │   │   │   ├── base_analyzer.py
-│   │   │   ├── zip_analyzer.py
-│   │   │   └── ... (其他分析器)
+│   │   │   ├── bmp_analyzer.py
+│   │   │   ├── gif_analyzer.py
+│   │   │   ├── png_analyzer.py
+│   │   │   ├── rar_analyzer.py
+│   │   │   └── zip_analyzer.py
 │   │   ├── __init__.py
 │   │   ├── core.py         # <--- 核心函数
 │   │   └── main_analyzer.py  # <--- 分析器加载与协调器
-│   ├── app.py
-│   └── requirements.txt
+│   ├── app.py              # <--- Flask应用主文件
+│   ├── run.py              # <--- 应用启动脚本
+│   └── requirements.txt    # <--- 依赖包列表
 ├── frontend_static/
 │   ├── index.html
 │   ├── script.js
@@ -31,13 +36,22 @@
 
 - **模块化与可扩展的分析器**: 系统的核心是一个动态加载的模块化分析引擎。您可以轻松编写自己的分析器来扩展工具的功能，以应对新的文件类型或挑战。
 - **文件上传与十六进制/ASCII预览**: 上传任意文件，并以十六进制编辑器格式查看其头部和尾部数据。
-- **文件类型分析**: 通过一个包含数十种常见文件类型的扩展数据库（包括图片、存档、文档、可执行文件等），精确检测文件类型。
-- **字符串与URL提取**: 提取所有可打印字符串、URL和常见CTF关键字。
-- **熵分析**: 计算香non熵，以识别加壳或加密的数据区域。
+- **文件类型分析**: 通过专门的魔法字节数据库，精确检测多种文件类型，包括：
+    - 图片格式：PNG、JPEG、GIF、BMP
+    - 压缩格式：ZIP、RAR(包括RAR5)
+    - 音频格式：WAV
+- **字符串与特征提取**: 
+    - 提取所有可打印字符串（最小长度4个字符）
+    - 自动识别CTF格式的flag（如`flag{...}`或`ctf{...}`）
+    - 检测常见CTF关键字（flag、ctf、key、password、secret、crypto等）
+    - 自动提取URL链接
+- **熵分析**: 计算数据熵，以识别加密或压缩的数据区域。
 - **深度分析与结构解析**:
-    - **ZIP**: 详细解析每个文件的本地头，并能发现未被索引的隐藏条目。
-    - **PNG**: 解析IHDR块，并校验各数据块的CRC。
-    - **BMP, GIF, RAR**: 解析文件头和元数据。
+    - **ZIP**: 详细解析每个文件的本地头，检测伪加密，发现隐藏文件。
+    - **PNG**: 解析IHDR块，进行CRC校验，检测数据块完整性。
+    - **BMP**: 解析文件头、颜色表和像素数据。
+    - **GIF**: 分析文件头、逻辑屏幕描述符和图像块。
+    - **RAR**: 支持RAR4和RAR5格式，解析文件头和存档内容。
 - **推荐工具**: 根据分析发现，自动推荐相关的第三方CTF工具（例如 `binwalk`, `bkcrack` 等）。
 
 ---
@@ -50,7 +64,7 @@
 
 ---
 
-## 第一部分：后端设置 (Flask API)
+## 后端设置 (Flask API)
 
 后端是一个执行所有分析任务的 Python Flask 应用程序。
 
@@ -97,47 +111,71 @@ python3 -m venv venv
 pip install -r requirements.txt
 ```
 
-### 第4步：运行后端服务器
+### 第4步：启动应用
 
-请确保您位于 `backend_api` 目录中，并已激活虚拟环境。
+在 backend_api 目录下，运行以下命令启动服务器：
 
 ```bash
-# 服务器默认将在 http://localhost:5000 运行
 flask run --host=0.0.0.0
 ```
-后端 API 现在已成功运行并准备好接受请求。
+
+服务器将在 5000 端口上启动，支持局域网访问。
+
+> 注：如果需要自定义服务器配置，可以编辑项目根目录下的 `config.json` 文件。配置将在运行时自动加载。
 
 ---
 
-## 第二部分：前端设置 (静态 Web 应用)
+## 依赖说明
 
-前端是一组静态的 HTML、CSS 和 JS 文件，可以由任何简单的 Web 服务器托管。
+本项目依赖以下Python包：
 
-### 简便方法：使用一键启动脚本
+- **Flask**: Web应用框架
+- **Flask-Cors**: 处理跨域资源共享
+- **numpy**: 用于数值计算和熵分析
+- **Pillow**: 图像处理库
+- **rarfile**: RAR文件格式支持
 
-为了方便，您可以使用项目提供的脚本来快速启动前端服务器。
+在项目根目录下创建 `config.json` 文件（如果不存在），配置示例如下：
 
-1.  打开一个 **新的终端** (不要关闭您的后端终端)。
-2.  进入 `frontend_static` 目录。
-    ```bash
-    cd frontend_static
-    ```
-3.  运行对应的启动脚本:
-    - **Windows 用户**:
-        ```cmd
-        .\start_frontend.bat
-        ```
-    - **Linux / macOS 用户**:
-        ```bash
-        ./start_frontend.sh
-        ```
-    脚本会自动在 `http://localhost:8080` 启动服务器。
+```json
+{
+    "server": {
+        "host": "0.0.0.0",
+        "port": 5000,
+        "debug": false,
+        "max_content_length": 52428800
+    },
+    "cors": {
+        "allow_origins": "*",
+        "allow_methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"]
+    },
+    "cloudflare": {
+        "tunnel_domain": "your-domain.example.com",
+        "enabled": true
+    },
+    "security": {
+        "allowed_extensions": ["zip", "rar", "png", "jpg", "jpeg", "gif", "bmp"],
+        "max_file_size_mb": 50
+    },
+    "features": {
+        "enable_string_extraction": true,
+        "enable_entropy_analysis": true,
+        "enable_file_structure_analysis": true,
+        "enable_hex_preview": true
+    }
+}
+```
 
-### 访问应用程序
+配置说明：
+- `server`: 服务器基本配置
+  - `host`: 监听地址
+  - `port`: 监听端口
+  - `debug`: 调试模式
+  - `max_content_length`: 最大上传文件大小（字节）
+- `cors`: 跨域资源共享配置
+- `cloudflare`: Cloudflare Tunnel 配置
+- `security`: 安全相关配置
+- `features`: 功能开关配置
 
-当后端和前端服务器都成功运行后：
-
-1.  打开您的网络浏览器。
-2.  访问前端 URL: **`http://localhost:8080`** (或您用于前端的端口)。
-
-您现在可以上传文件并查看分析结果了。前端将与运行在 5000 端口的后端 API 进行通信。如果您的后端位于不同的 URL，可以编辑 `frontend_static/script.js` 文件顶部的 `API_BASE_URL` 常量。
+---

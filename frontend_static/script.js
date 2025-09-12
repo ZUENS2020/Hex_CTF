@@ -1,9 +1,7 @@
 // --- Configuration ---
-// IMPORTANT: For local development, this should be 'http://localhost:5000'.
-// When deploying or using a tunnel (like Cloudflare), you MUST replace this
-// with the actual, full URL of your backend API.
-// For example: https://my-backend-tunnel.cloudflare.com
-const API_BASE_URL = 'http://localhost:5000';
+// 根据当前页面 URL 确定 API 基础路径
+const API_BASE_URL = window.location.pathname === '/' ? '' : window.location.pathname.replace(/\/+$/, '');
+console.log('Using API base URL:', API_BASE_URL);
 
 // --- DOM Elements ---
 const uploadForm = document.getElementById('upload-form');
@@ -218,8 +216,8 @@ async function handleFormSubmit(event) {
     formData.append('file', file);
 
     try {
-        const analyzeUrl = `${API_BASE_URL}/ctf_analyze`;
-        console.log('Sending analysis request to:', analyzeUrl); // Debugging line
+        const analyzeUrl = `${API_BASE_URL}/ctf_analyze`.replace(/\/+/g, '/');
+        console.log('Sending analysis request to:', analyzeUrl);
 
         const response = await fetch(analyzeUrl, {
             method: 'POST',
