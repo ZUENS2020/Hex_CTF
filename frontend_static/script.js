@@ -1,6 +1,9 @@
 // --- Configuration ---
-// Use a relative URL to allow access from any domain (e.g., via tunnels)
-const API_BASE_URL = '';
+// IMPORTANT: For local development, this should be 'http://localhost:5000'.
+// When deploying or using a tunnel (like Cloudflare), you MUST replace this
+// with the actual, full URL of your backend API.
+// For example: https://my-backend-tunnel.cloudflare.com
+const API_BASE_URL = 'http://localhost:5000';
 
 // --- DOM Elements ---
 const uploadForm = document.getElementById('upload-form');
