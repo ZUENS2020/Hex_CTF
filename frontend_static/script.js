@@ -218,7 +218,10 @@ async function handleFormSubmit(event) {
     formData.append('file', file);
 
     try {
-        const response = await fetch(`${API_BASE_URL}/ctf_analyze`, {
+        const analyzeUrl = `${API_BASE_URL}/ctf_analyze`;
+        console.log('Sending analysis request to:', analyzeUrl); // Debugging line
+
+        const response = await fetch(analyzeUrl, {
             method: 'POST',
             body: formData,
         });
