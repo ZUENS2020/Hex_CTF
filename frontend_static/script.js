@@ -1,5 +1,6 @@
 // --- Configuration ---
-const API_BASE_URL = 'http://localhost:5000';
+// Use a relative URL to allow access from any domain (e.g., via tunnels)
+const API_BASE_URL = '';
 
 // --- DOM Elements ---
 const uploadForm = document.getElementById('upload-form');
