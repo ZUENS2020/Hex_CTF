@@ -218,7 +218,13 @@ async function handleFormSubmit(event) {
     formData.append('file', file);
 
     try {
-        const analyzeUrl = `${API_BASE_URL}/ctf_analyze`;
+        // Automatically correct for missing protocol in the base URL
+        let baseUrl = API_BASE_URL.trim();
+        if (baseUrl && !baseUrl.startsWith('http')) {
+            baseUrl = 'https://' + baseUrl;
+        }
+
+        const analyzeUrl = `${baseUrl}/ctf_analyze`;
         console.log('Sending analysis request to:', analyzeUrl); // Debugging line
 
         const response = await fetch(analyzeUrl, {
