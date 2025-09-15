@@ -1,12 +1,21 @@
 import google.generativeai as genai
+import json
+import os
 
 # --- Configuration ---
-try:
-    # Attempt to import the user-configured API key
-    from ..config import GEMINI_API_KEY
-except (ImportError, ModuleNotFoundError):
-    # If config.py doesn't exist, treat it as if the key is not set
-    GEMINI_API_KEY = None
+def load_config():
+    """Loads the configuration from config.json."""
+    # Construct the path to config.json relative to this file's directory
+    config_path = os.path.join(os.path.dirname(__file__), '..', 'config.json')
+    try:
+        with open(config_path, 'r') as f:
+            config = json.load(f)
+            return config.get("GEMINI_API_KEY")
+    except (FileNotFoundError, json.JSONDecodeError):
+        # If config.json is missing or corrupted, key is not set
+        return None
+
+GEMINI_API_KEY = load_config()
 
 # A placeholder check to see if the user has replaced the default key
 IS_API_KEY_SET = GEMINI_API_KEY and "YOUR_API_KEY_HERE" not in GEMINI_API_KEY
@@ -19,7 +28,7 @@ def get_ai_analysis(hex_preview):
     :return: A string containing the AI's analysis, or an error/info message.
     """
     if not IS_API_KEY_SET:
-        return "AI analysis skipped: Gemini API key is not configured in 'backend_api/config.py'."
+        return "AI analysis skipped: Gemini API key is not configured in 'backend_api/config.json'."
 
     try:
         genai.configure(api_key=GEMINI_API_KEY)
