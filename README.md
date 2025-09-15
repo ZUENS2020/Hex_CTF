@@ -27,7 +27,7 @@
 
 ## 核心功能
 
-- **AI 增强分析 (由 Gemini 驱动)**: (可选功能) 集成 Google Gemini Pro，对文件的十六进制内容进行智能分析，提供专家级的 CTF 解题思路和线索。
+- **AI 增强分析 (由 OpenAI 兼容 API 驱动)**: (可选功能) 集成 OpenAI 兼容的 API，对文件的十六进制内容进行智能分析，提供专家级的 CTF 解题思路和线索。
 - **模块化与可扩展的分析器**: 系统的核心是一个动态加载的模块化分析引擎。您可以轻松编写自己的分析器来扩展工具的功能，以应对新的文件类型或挑战。
 - **文件上传与十六进制/ASCII预览**: 上传任意文件，并以十六进制编辑器格式查看其头部和尾部数据。
 - **文件类型分析**: 通过一个包含数十种常见文件类型的扩展数据库（包括图片、存档、文档、可执行文件等），精确检测文件类型。
@@ -43,28 +43,32 @@
 
 ## (可选) 启用 AI 分析功能
 
-您可以选择性地启用由 Google Gemini Pro 驱动的 AI 分析功能。
+您可以选择性地启用由 OpenAI 兼容 API 驱动的 AI 分析功能。
 
-### 第1步：获取 Gemini API 密钥
+### 第1步：获取 API 密钥
 
-前往 **[Google AI Studio](https://makersuite.google.com/app/apikey)** 获取您的免费 API 密钥。
+前往您的 OpenAI API 服务提供商处获取 API 密钥。
 
-### 第2步：配置密钥
+### 第2步：配置密钥和 API 地址
 
 1.  在项目根目录下，找到 `config.json.example` 文件。
 2.  **复制** 这个文件并将其重命名为 `config.json`。
 3.  用您的文本编辑器打开 `config.json` 文件。
-4.  在 `gemini` 部分，将 `"YOUR_API_KEY_HERE"` 替换为您在第一步中获取的真实 API 密钥。
+4.  在 `openai` 部分，将 `"YOUR_API_KEY_HERE"` 替换为您的真实 API 密钥。
+5.  (可选) 如果您使用代理或自建的 OpenAI 兼容服务，请修改 `api_base` 的值为您的服务地址。
 
 ```json
 // config.json
 {
     // ... 其他配置 ...
-    "gemini": {
-        "api_key": "xxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    "openai": {
+        "api_key": "sk-xxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "api_base": "https://api.openai.com/v1"
     }
 }
 ```
+
+您也可以通过设置环境变量 `OPENAI_API_KEY` 和 `OPENAI_API_BASE` 来覆盖 `config.json` 中的配置。
 
 完成以上步骤后，下次启动后端服务时，AI 分析功能将被自动激活。如果您没有配置密钥，该功能将被安全地跳过。
 
