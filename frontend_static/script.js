@@ -249,7 +249,7 @@ async function handleFormSubmit(event) {
             baseUrl = 'https://' + baseUrl;
         }
 
-        const analyzeUrl = `${baseUrl}/ctf_analyze`;
+        const analyzeUrl = `${baseUrl}/api/analyze`;
         console.log('Sending analysis request to:', analyzeUrl); // Debugging line
 
         const response = await fetch(analyzeUrl, {

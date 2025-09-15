@@ -10,20 +10,18 @@
 .
 ├── backend_api/
 │   ├── analyzer/
-│   │   ├── analyzers/      # <--- 模块化分析器目录
-│   │   │   ├── __init__.py
-│   │   │   ├── base_analyzer.py
-│   │   │   ├── zip_analyzer.py
-│   │   │   └── ... (其他分析器)
+│   │   ├── analyzers/
 │   │   ├── __init__.py
-│   │   ├── core.py         # <--- 核心函数
-│   │   └── main_analyzer.py  # <--- 分析器加载与协调器
+│   │   ├── core.py
+│   │   └── main_analyzer.py
 │   ├── app.py
+│   ├── run.py              # <--- 应用启动脚本
 │   └── requirements.txt
 ├── frontend_static/
 │   ├── index.html
 │   ├── script.js
 │   └── style.css
+├── config.json.example     # <--- 新的配置文件模板
 └── README.md
 ```
 
@@ -43,14 +41,6 @@
 
 ---
 
-## 可扩展的分析器
-
-本工具最大的特点之一是其模块化的分析器架构。您可以为任何文件格式创建自己的分析器，而无需修改核心代码。
-
-详细的开发指南请参见 `backend_api/analyzer/analyzers/README.md`。
-
----
-
 ## (可选) 启用 AI 分析功能
 
 您可以选择性地启用由 Google Gemini Pro 驱动的 AI 分析功能。
@@ -61,16 +51,19 @@
 
 ### 第2步：配置密钥
 
-1.  在 `backend_api` 目录下，找到 `config.py.example` 文件。
-2.  **复制** 这个文件并将其重命名为 `config.py`。
-3.  用您的文本编辑器打开 `config.py` 文件。
-4.  将 `"YOUR_API_KEY_HERE"` 替换为您在第一步中获取的真实 API 密钥。
+1.  在项目根目录下，找到 `config.json.example` 文件。
+2.  **复制** 这个文件并将其重命名为 `config.json`。
+3.  用您的文本编辑器打开 `config.json` 文件。
+4.  在 `gemini` 部分，将 `"YOUR_API_KEY_HERE"` 替换为您在第一步中获取的真实 API 密钥。
 
-```python
-# backend_api/config.py
-
-# ... (注释内容) ...
-GEMINI_API_KEY = "xxxxxxxxxxxxxxxxxxxxxxxxxxx" # <--- 替换为您的密钥
+```json
+// config.json
+{
+    // ... 其他配置 ...
+    "gemini": {
+        "api_key": "xxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+}
 ```
 
 完成以上步骤后，下次启动后端服务时，AI 分析功能将被自动激活。如果您没有配置密钥，该功能将被安全地跳过。
@@ -129,10 +122,10 @@ pip install -r requirements.txt
 请确保您位于 `backend_api` 目录中，并已激活虚拟环境。
 
 ```bash
-# 服务器默认将在 http://localhost:5000 运行
-flask run --host=0.0.0.0
+# 运行应用
+python run.py
 ```
-后端 API 现在已成功运行并准备好接受请求。
+服务器现在将在 `http://localhost:5000` (或您在 `config.json` 中配置的地址) 运行。后端 API 现在已成功运行并准备好接受请求。
 
 ---
 
