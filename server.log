@@ -1,4 +1,6 @@
 Configuration loaded from config.json
+Loaded OPENAI_API_KEY from environment variable (override).
+Loaded OPENAI_API_BASE from environment variable (override).
 Starting server at http://0.0.0.0:5000
  * Serving Flask app 'app'
  * Debug mode: off

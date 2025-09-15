@@ -7,7 +7,7 @@ from flask_cors import CORS
 from analyzer.main_analyzer import analyze_file
 
 def load_config():
-    """Loads config from config.json, with fallbacks for OpenAI key."""
+    """Loads config from config.json, with fallbacks for OpenAI key and base URL."""
     config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config.json'))
 
     # Default config structure
@@ -16,7 +16,7 @@ def load_config():
         "cors": {"allow_origins": "*", "allow_methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type"]},
         "security": {"allowed_extensions": ["zip", "rar", "png", "jpg", "jpeg", "gif", "bmp"], "max_file_size_mb": 50},
         "features": {"enable_string_extraction": True, "enable_entropy_analysis": True, "enable_file_structure_analysis": True, "enable_hex_preview": True},
-        "openai": {"api_key": None}
+        "openai": {"api_key": None, "api_base": "https://api.openai.com/v1"}
     }
 
     config = default_config
@@ -41,6 +41,17 @@ def load_config():
                 config["openai"] = {}
             config["openai"]["api_key"] = openai_key
             print("Loaded OPENAI_API_KEY from environment variable.")
+
+    # Allow environment variables to override the config file
+    openai_key_env = os.environ.get('OPENAI_API_KEY')
+    if openai_key_env:
+        config["openai"]["api_key"] = openai_key_env
+        print("Loaded OPENAI_API_KEY from environment variable (override).")
+
+    openai_base_env = os.environ.get('OPENAI_API_BASE')
+    if openai_base_env:
+        config["openai"]["api_base"] = openai_base_env
+        print("Loaded OPENAI_API_BASE from environment variable (override).")
 
     return config
 

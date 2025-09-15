@@ -25,6 +25,7 @@
         "enable_hex_preview": true
     },
     "openai": {
-        "api_key": "YOUR_API_KEY_HERE"
+        "api_key": "YOUR_API_KEY_HERE",
+        "api_base": "https://api.openai.com/v1"
     }
 }

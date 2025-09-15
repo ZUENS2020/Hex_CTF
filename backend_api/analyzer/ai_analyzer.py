@@ -9,7 +9,10 @@ def get_ai_analysis(hex_preview, config):
     :param config: The application configuration dictionary.
     :return: A string containing the AI's analysis, or an error/info message.
     """
-    openai_api_key = config.get("openai", {}).get("api_key")
+    openai_config = config.get("openai", {})
+    openai_api_key = openai_config.get("api_key")
+    api_base = openai_config.get("api_base", "https://api.openai.com/v1") # Default just in case
+
     is_api_key_set = openai_api_key and "YOUR_API_KEY_HERE" not in openai_api_key
 
     if not is_api_key_set:
@@ -69,7 +72,11 @@ Provide your analysis in a concise, clear, and well-structured format.
     }
 
     try:
-        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, data=json.dumps(data), timeout=15)
+        # Ensure the endpoint path starts with a slash and the base URL does not end with one
+        endpoint = "/chat/completions"
+        url = f"{api_base.rstrip('/')}{endpoint}"
+
+        response = requests.post(url, headers=headers, data=json.dumps(data), timeout=15)
         response.raise_for_status()  # Raise an exception for bad status codes
         return response.json()["choices"][0]["message"]["content"]
     except requests.exceptions.RequestException as e:
