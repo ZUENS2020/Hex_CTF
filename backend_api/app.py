@@ -8,7 +8,10 @@ from analyzer.main_analyzer import analyze_file
 
 # --- App Initialization ---
 app = Flask(__name__)
-CORS(app) # Enable Cross-Origin Resource Sharing for the frontend
+# Configure CORS to be more explicit, allowing all origins for the /ctf_analyze endpoint.
+# This is crucial for environments like Cloudflare tunnels where the frontend and backend
+# may be on different subdomains.
+CORS(app, resources={r"/ctf_analyze": {"origins": "*"}})
 
 # --- Configuration ---
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024

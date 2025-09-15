@@ -36,6 +36,7 @@
         <div id="results-container" class="hidden">
             <div class="tab-nav">
                 <button class="tab-link active" data-tab="tab-overview">文件总览</button>
+                <button class="tab-link" data-tab="tab-ai">🤖 AI 分析</button>
                 <button class="tab-link" data-tab="tab-findings">主要发现</button>
                 <button class="tab-link" data-tab="tab-structure">文件结构</button>
                 <button class="tab-link" data-tab="tab-strings">提取字符串</button>
@@ -44,6 +45,9 @@
 
             <div id="tab-overview" class="tab-pane active">
                 <div id="overview-content" class="card"></div>
+            </div>
+            <div id="tab-ai" class="tab-pane">
+                <div id="ai-analysis-content" class="card"></div>
             </div>
             <div id="tab-findings" class="tab-pane">
                 <div id="findings-content" class="card"></div>

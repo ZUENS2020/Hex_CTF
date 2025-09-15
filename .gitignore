@@ -1,0 +1,21 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.[oa]
+*.so
+
+# Virtual environment
+venv/
+.venv/
+env/
+ENV/
+
+# User-specific configuration
+# This file contains sensitive API keys and should not be committed.
+backend_api/config.py
+
+# IDE / Editor specific files
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,4 +1,8 @@
 // --- Configuration ---
+// IMPORTANT: For local development, this should be 'http://localhost:5000'.
+// When deploying or using a tunnel (like Cloudflare), you MUST replace this
+// with the actual, full URL of your backend API.
+// For example: https://my-backend-tunnel.cloudflare.com
 const API_BASE_URL = 'http://localhost:5000';
 
 // --- DOM Elements ---
@@ -194,6 +198,31 @@ function renderStrings(strings) {
     });
 }
 
+function renderAiAnalysis(analysisText) {
+    const container = document.getElementById('ai-analysis-content');
+    const aiTab = document.querySelector('button[data-tab="tab-ai"]');
+
+    if (!analysisText) {
+        // If there's no AI analysis, hide the tab completely.
+        if (aiTab) aiTab.style.display = 'none';
+        container.innerHTML = '';
+        return;
+    }
+
+    // If there is analysis, make sure the tab is visible.
+    if (aiTab) aiTab.style.display = '';
+
+    // Basic markdown-like formatting: escape HTML, then replace newlines with <br>
+    // This is safer than a full markdown parser.
+    let formattedText = escapeHTML(analysisText);
+    formattedText = formattedText.replace(/\n/g, '<br>');
+
+    // Make headings bold
+    formattedText = formattedText.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+    container.innerHTML = `<div class="ai-response">${formattedText}</div>`;
+}
+
 // --- Event Handlers ---
 
 async function handleFormSubmit(event) {
@@ -214,7 +243,16 @@ async function handleFormSubmit(event) {
     formData.append('file', file);
 
     try {
-        const response = await fetch(`${API_BASE_URL}/ctf_analyze`, {
+        // Automatically correct for missing protocol in the base URL
+        let baseUrl = API_BASE_URL.trim();
+        if (baseUrl && !baseUrl.startsWith('http')) {
+            baseUrl = 'https://' + baseUrl;
+        }
+
+        const analyzeUrl = `${baseUrl}/ctf_analyze`;
+        console.log('Sending analysis request to:', analyzeUrl); // Debugging line
+
+        const response = await fetch(analyzeUrl, {
             method: 'POST',
             body: formData,
         });
@@ -229,6 +267,7 @@ async function handleFormSubmit(event) {
         // Render all results
         renderOverview(data);
         renderFindings(data.findings);
+        renderAiAnalysis(data.ai_analysis); // Render AI analysis
         renderFileStructure(data.file_structure);
         renderHexPreview(data.hex_ascii_preview);
         renderStrings(data.extracted_strings);
