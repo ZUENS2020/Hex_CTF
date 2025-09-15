@@ -1,47 +1,94 @@
 import os
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+import json
+from flask import Flask, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
+from flask_cors import CORS
 
-# Import the main analysis function
 from analyzer.main_analyzer import analyze_file
 
-# --- App Initialization ---
-app = Flask(__name__)
-# Configure CORS to be more explicit, allowing all origins for the /ctf_analyze endpoint.
-# This is crucial for environments like Cloudflare tunnels where the frontend and backend
-# may be on different subdomains.
-CORS(app, resources={r"/ctf_analyze": {"origins": "*"}})
+def load_config():
+    """Loads config from config.json, with fallbacks for Gemini key."""
+    config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config.json'))
 
-# --- Configuration ---
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
+    # Default config structure
+    default_config = {
+        "server": {"host": "0.0.0.0", "port": 5000, "debug": False, "max_content_length": 52428800},
+        "cors": {"allow_origins": "*", "allow_methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type"]},
+        "security": {"allowed_extensions": ["zip", "rar", "png", "jpg", "jpeg", "gif", "bmp"], "max_file_size_mb": 50},
+        "features": {"enable_string_extraction": True, "enable_entropy_analysis": True, "enable_file_structure_analysis": True, "enable_hex_preview": True},
+        "gemini": {"api_key": None}
+    }
+
+    config = default_config
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config.update(json.load(f))
+            print("Configuration loaded from config.json")
+    except FileNotFoundError:
+        print("WARNING: config.json not found. Using default settings and environment variables.")
+
+    # Fallback for Gemini API Key from environment variable
+    if not config.get("gemini", {}).get("api_key"):
+        gemini_key = os.environ.get('GEMINI_API_KEY')
+        if gemini_key:
+            if "gemini" not in config:
+                config["gemini"] = {}
+            config["gemini"]["api_key"] = gemini_key
+            print("Loaded GEMINI_API_KEY from environment variable.")
+
+    return config
+
+# Load configuration
+CONFIG = load_config()
+
+# --- App Initialization ---
+app = Flask(__name__, static_folder=None)
+CORS(app, resources={r"/api/*": CONFIG['cors']})
+
+# --- App Configuration ---
+app.config['MAX_CONTENT_LENGTH'] = CONFIG['server']['max_content_length']
+FRONTEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'frontend_static'))
 
 # --- API Routes ---
+@app.route('/api/health', methods=['GET'])
+def health_check():
+    """Confirms that the API is running."""
+    return jsonify({"status": "ok"})
 
-@app.route('/', methods=['GET'])
-def index():
-    """A simple route to confirm the API is running."""
-    return jsonify({"status": "ok", "message": "CTF File Analyzer API is running."})
-
-@app.route('/ctf_analyze', methods=['POST'])
-def ctf_analyze_route():
-    """The main endpoint for the web UI."""
+@app.route('/api/analyze', methods=['POST'])
+def analyze_route():
+    """Handles the file upload and analysis."""
     if 'file' not in request.files:
         return jsonify({"error": "No file part in the request"}), 400
 
     file = request.files['file']
     if file.filename == '':
-        return jsonify({"error": "No selected file"}), 400
+        return jsonify({"error": "No file selected"}), 400
 
     if file:
         try:
-            analysis_results = analyze_file(file)
+            analysis_results = analyze_file(file, CONFIG)
             return jsonify(analysis_results)
         except Exception as e:
             return jsonify({"error": "An unexpected error occurred during analysis.", "details": str(e)}), 500
+
     return jsonify({"error": "Invalid file"}), 400
 
-# --- Main Execution ---
+# --- Static Files Routes ---
+@app.route('/', defaults={'path': ''})
+@app.route('/<path:path>')
+def serve_static(path):
+    """Serves static files from the frontend directory."""
+    if path != "" and os.path.exists(os.path.join(FRONTEND_DIR, path)):
+        return send_from_directory(FRONTEND_DIR, path)
+    else:
+        return send_from_directory(FRONTEND_DIR, 'index.html')
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)), debug=True)
+    # This is for local development testing only.
+    # Use run.py for production.
+    app.run(
+        host=CONFIG['server']['host'],
+        port=CONFIG['server']['port'],
+        debug=CONFIG['server']['debug']
+    )

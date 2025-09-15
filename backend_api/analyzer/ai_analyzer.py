@@ -1,37 +1,21 @@
 import google.generativeai as genai
-import json
-import os
 
-# --- Configuration ---
-def load_config():
-    """Loads the configuration from config.json."""
-    # Construct the path to config.json relative to this file's directory
-    config_path = os.path.join(os.path.dirname(__file__), '..', 'config.json')
-    try:
-        with open(config_path, 'r') as f:
-            config = json.load(f)
-            return config.get("GEMINI_API_KEY")
-    except (FileNotFoundError, json.JSONDecodeError):
-        # If config.json is missing or corrupted, key is not set
-        return None
-
-GEMINI_API_KEY = load_config()
-
-# A placeholder check to see if the user has replaced the default key
-IS_API_KEY_SET = GEMINI_API_KEY and "YOUR_API_KEY_HERE" not in GEMINI_API_KEY
-
-def get_ai_analysis(hex_preview):
+def get_ai_analysis(hex_preview, config):
     """
     Analyzes the provided hex data using the Gemini API.
 
     :param hex_preview: A dictionary containing 'head' and 'tail' hex/ascii previews.
+    :param config: The application configuration dictionary.
     :return: A string containing the AI's analysis, or an error/info message.
     """
-    if not IS_API_KEY_SET:
-        return "AI analysis skipped: Gemini API key is not configured in 'backend_api/config.json'."
+    gemini_api_key = config.get("gemini", {}).get("api_key")
+    is_api_key_set = gemini_api_key and "YOUR_API_KEY_HERE" not in gemini_api_key
+
+    if not is_api_key_set:
+        return "AI analysis skipped: Gemini API key is not configured in 'config.json' or environment variables."
 
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
+        genai.configure(api_key=gemini_api_key)
         model = genai.GenerativeModel('gemini-pro')
     except Exception as e:
         return f"AI analysis failed: Could not configure the Gemini model. Error: {e}"
@@ -78,5 +62,4 @@ Provide your analysis in a concise, clear, and well-structured format.
         response = model.generate_content(prompt)
         return response.text
     except Exception as e:
-        # This will catch API errors, like authentication issues, quota limits, etc.
-        return f"AI analysis failed: An error occurred while communicating with the Gemini API. Please check your API key and network connection. Error: {e}"
+        return f"AI analysis failed: An error occurred while communicating with the Gemini API. Error: {e}"

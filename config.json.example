@@ -1,0 +1,26 @@
+{
+    "server": {
+        "host": "0.0.0.0",
+        "port": 5000,
+        "debug": false,
+        "max_content_length": 52428800
+    },
+    "cors": {
+        "allow_origins": "*",
+        "allow_methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"]
+    },
+    "security": {
+        "allowed_extensions": ["zip", "rar", "png", "jpg", "jpeg", "gif", "bmp"],
+        "max_file_size_mb": 50
+    },
+    "features": {
+        "enable_string_extraction": true,
+        "enable_entropy_analysis": true,
+        "enable_file_structure_analysis": true,
+        "enable_hex_preview": true
+    },
+    "gemini": {
+        "api_key": "YOUR_API_KEY_HERE"
+    }
+}

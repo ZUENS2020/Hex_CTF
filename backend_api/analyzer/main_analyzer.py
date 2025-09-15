@@ -34,7 +34,7 @@ def load_analyzers():
 
 # --- Main Orchestrator ---
 
-def analyze_file(file_storage):
+def analyze_file(file_storage, config):
     """
     Analyzes a file by orchestrating various analysis components.
     """
@@ -71,7 +71,7 @@ def analyze_file(file_storage):
 
     # --- AI Analysis ---
     hex_preview = get_hex_preview(data)
-    ai_analysis_result = get_ai_analysis(hex_preview)
+    ai_analysis_result = get_ai_analysis(hex_preview, config)
 
     # --- Final Result Aggregation ---
     return {

@@ -13,7 +13,7 @@ ENV/
 # User-specific configuration
 # These files contain sensitive API keys and should not be committed.
 backend_api/config.py
-backend_api/config.json
+config.json
 
 # IDE / Editor specific files
 .idea/
