@@ -7,7 +7,7 @@ from flask_cors import CORS
 from analyzer.main_analyzer import analyze_file
 
 def load_config():
-    """Loads config from config.json, with fallbacks for Gemini key."""
+    """Loads config from config.json, with fallbacks for OpenAI key."""
     config_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'config.json'))
 
     # Default config structure
@@ -16,25 +16,31 @@ def load_config():
         "cors": {"allow_origins": "*", "allow_methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type"]},
         "security": {"allowed_extensions": ["zip", "rar", "png", "jpg", "jpeg", "gif", "bmp"], "max_file_size_mb": 50},
         "features": {"enable_string_extraction": True, "enable_entropy_analysis": True, "enable_file_structure_analysis": True, "enable_hex_preview": True},
-        "gemini": {"api_key": None}
+        "openai": {"api_key": None}
     }
 
     config = default_config
     try:
         with open(config_path, 'r', encoding='utf-8') as f:
-            config.update(json.load(f))
+            # Load user config and merge it into the default config
+            user_config = json.load(f)
+            for key, value in user_config.items():
+                if isinstance(value, dict) and key in config:
+                    config[key].update(value)
+                else:
+                    config[key] = value
             print("Configuration loaded from config.json")
     except FileNotFoundError:
         print("WARNING: config.json not found. Using default settings and environment variables.")
 
-    # Fallback for Gemini API Key from environment variable
-    if not config.get("gemini", {}).get("api_key"):
-        gemini_key = os.environ.get('GEMINI_API_KEY')
-        if gemini_key:
-            if "gemini" not in config:
-                config["gemini"] = {}
-            config["gemini"]["api_key"] = gemini_key
-            print("Loaded GEMINI_API_KEY from environment variable.")
+    # Fallback for OpenAI API Key from environment variable
+    if not config.get("openai", {}).get("api_key"):
+        openai_key = os.environ.get('OPENAI_API_KEY')
+        if openai_key:
+            if "openai" not in config:
+                config["openai"] = {}
+            config["openai"]["api_key"] = openai_key
+            print("Loaded OPENAI_API_KEY from environment variable.")
 
     return config
 

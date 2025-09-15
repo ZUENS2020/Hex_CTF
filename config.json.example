@@ -24,7 +24,7 @@
         "enable_file_structure_analysis": true,
         "enable_hex_preview": true
     },
-    "gemini": {
+    "openai": {
         "api_key": "YOUR_API_KEY_HERE"
     }
 }

@@ -1,24 +1,19 @@
-import google.generativeai as genai
+import requests
+import json
 
 def get_ai_analysis(hex_preview, config):
     """
-    Analyzes the provided hex data using the Gemini API.
+    Analyzes the provided hex data using the OpenAI API with requests.
 
     :param hex_preview: A dictionary containing 'head' and 'tail' hex/ascii previews.
     :param config: The application configuration dictionary.
     :return: A string containing the AI's analysis, or an error/info message.
     """
-    gemini_api_key = config.get("gemini", {}).get("api_key")
-    is_api_key_set = gemini_api_key and "YOUR_API_KEY_HERE" not in gemini_api_key
+    openai_api_key = config.get("openai", {}).get("api_key")
+    is_api_key_set = openai_api_key and "YOUR_API_KEY_HERE" not in openai_api_key
 
     if not is_api_key_set:
-        return "AI analysis skipped: Gemini API key is not configured in 'config.json' or environment variables."
-
-    try:
-        genai.configure(api_key=gemini_api_key)
-        model = genai.GenerativeModel('gemini-pro')
-    except Exception as e:
-        return f"AI analysis failed: Could not configure the Gemini model. Error: {e}"
+        return "AI analysis skipped: OpenAI API key is not configured in 'config.json' or environment variables."
 
     # Prepare the content for the prompt
     file_head_hex = hex_preview.get('head', '')
@@ -58,8 +53,28 @@ Provide your analysis in a concise, clear, and well-structured format.
 **Your Expert Analysis:**
 """
 
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {openai_api_key}"
+    }
+
+    data = {
+        "model": "gpt-4",
+        "messages": [
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    }
+
     try:
-        response = model.generate_content(prompt)
-        return response.text
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, data=json.dumps(data), timeout=15)
+        response.raise_for_status()  # Raise an exception for bad status codes
+        return response.json()["choices"][0]["message"]["content"]
+    except requests.exceptions.RequestException as e:
+        return f"AI analysis failed: An error occurred while communicating with the OpenAI API. Error: {e}"
+    except (KeyError, IndexError) as e:
+        return f"AI analysis failed: Could not parse the response from the OpenAI API. Error: {e}"
     except Exception as e:
-        return f"AI analysis failed: An error occurred while communicating with the Gemini API. Error: {e}"
+        return f"AI analysis failed: An unexpected error occurred. Error: {e}"
