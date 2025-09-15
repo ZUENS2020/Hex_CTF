@@ -70,7 +70,7 @@
 
 ---
 
-## 第一部分：后端设置 (Flask API)
+## 后端设置 (Flask API)
 
 后端是一个执行所有分析任务的 Python Flask 应用程序。
 
